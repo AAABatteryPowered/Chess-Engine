@@ -1,9 +1,13 @@
 package board
 
-import "fmt"
+import (
+	"fmt"
+)
 
 type BoardMethods interface {
 	FromFen(string)
+	GenMoves() []Move
+	SetTurn(bool)
 }
 
 type Board struct {
@@ -20,6 +24,14 @@ type Board struct {
 	BBishops Bitboard
 	BKnights Bitboard
 	BPawns   Bitboard
+
+	FilledSquares Bitboard
+	Turn          bool
+}
+
+type Move struct {
+	StartSquare int
+	EndSquare   int
 }
 
 type Bitboard uint64
@@ -40,6 +52,10 @@ func (b Bitboard) IsSet(pos int) bool {
 	return (b>>pos)&1 == 1
 }
 
+func (b *Board) SetTurn(t bool) {
+	b.Turn = t
+}
+
 func (b *Board) FromFen(s string) {
 	posPointer := 0
 	for _, ch := range s {
@@ -50,44 +66,53 @@ func (b *Board) FromFen(s string) {
 		switch ch {
 		case 'K':
 			b.WKings.Set(posPointer)
+			b.FilledSquares.Set(posPointer)
 			posPointer += 1
 		case 'Q':
 			b.WQueens.Set(posPointer)
+			b.FilledSquares.Set(posPointer)
 			posPointer += 1
 		case 'R':
 			b.WRooks.Set(posPointer)
+			b.FilledSquares.Set(posPointer)
 			posPointer += 1
 		case 'B':
 			b.WBishops.Set(posPointer)
+			b.FilledSquares.Set(posPointer)
 			posPointer += 1
 		case 'N':
 			b.WKnights.Set(posPointer)
+			b.FilledSquares.Set(posPointer)
 			posPointer += 1
 		case 'P':
 			b.WPawns.Set(posPointer)
+			b.FilledSquares.Set(posPointer)
 			posPointer += 1
 
 		case 'k':
 			b.BKings.Set(posPointer)
+			b.FilledSquares.Set(posPointer)
 			posPointer += 1
 		case 'q':
 			b.BQueens.Set(posPointer)
+			b.FilledSquares.Set(posPointer)
 			posPointer += 1
 		case 'r':
 			b.BRooks.Set(posPointer)
+			b.FilledSquares.Set(posPointer)
 			posPointer += 1
 		case 'b':
 			b.BBishops.Set(posPointer)
+			b.FilledSquares.Set(posPointer)
 			posPointer += 1
 		case 'n':
 			b.BKnights.Set(posPointer)
+			b.FilledSquares.Set(posPointer)
 			posPointer += 1
 		case 'p':
 			b.BPawns.Set(posPointer)
+			b.FilledSquares.Set(posPointer)
 			posPointer += 1
-		}
-		if ch == 'K' {
-
 		}
 	}
 }
@@ -144,8 +169,6 @@ func (b *Board) DebugPrint() {
 				case 11:
 					finalstr += "p "
 				}
-				//fmt.Println(len(finalstr))
-
 				piecefound = true
 				break
 			}
@@ -156,10 +179,35 @@ func (b *Board) DebugPrint() {
 		}
 
 		if (len(finalstr)-newlinesadded)%16 == 0 {
-			fmt.Println(len(finalstr))
 			newlinesadded += 1
 			finalstr += "\n"
 		}
 	}
 	fmt.Println(finalstr)
+}
+
+func (b *Board) GenMoves() []Move {
+	allMoves := []Move{}
+	empty := ^b.FilledSquares
+
+	if b.Turn {
+		for pos := 0; pos < 64; pos++ {
+			for i, bb := range []Bitboard{b.WKings, b.WQueens, b.WRooks, b.WBishops, b.WKnights, b.WPawns} {
+				if bb.IsSet(pos) {
+					switch i {
+					case 5:
+						allMoves = append(allMoves, bb<<8)
+						if !(b.FilledSquares.IsSet(pos - 8)) {
+							allMoves = append(allMoves, Move{pos, pos - 8})
+							if !(b.FilledSquares.IsSet(pos - 16)) {
+								allMoves = append(allMoves, Move{pos, pos - 16})
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return allMoves
 }
