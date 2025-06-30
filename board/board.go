@@ -2,6 +2,14 @@ package board
 
 import (
 	"fmt"
+	"math/bits"
+)
+
+const (
+	FileA Bitboard = 0x0101010101010101
+	FileH Bitboard = 0x8080808080808080
+
+	WPawnStartRank Bitboard = 0x00FF000000000000
 )
 
 type BoardMethods interface {
@@ -30,8 +38,8 @@ type Board struct {
 }
 
 type Move struct {
-	StartSquare int
-	EndSquare   int
+	From int
+	To   int
 }
 
 type Bitboard uint64
@@ -46,6 +54,14 @@ func (b *Bitboard) Clear(pos int) {
 
 func (b *Bitboard) Toggle(pos int) {
 	*b ^= 1 << pos
+}
+
+func (b *Board) OpponentPieces() Bitboard {
+	if b.Turn {
+		return b.BKings | b.BQueens | b.BRooks | b.BBishops | b.BKnights | b.BPawns
+	} else {
+		return b.WKings | b.WQueens | b.WRooks | b.WBishops | b.WKnights | b.WPawns
+	}
 }
 
 func (b Bitboard) IsSet(pos int) bool {
@@ -115,6 +131,27 @@ func (b *Board) FromFen(s string) {
 			posPointer += 1
 		}
 	}
+}
+
+func (b *Board) PieceAt(square int) int {
+	allbb := b.AllBitboards()
+	for index, board := range allbb {
+		if board.IsSet(square) {
+			return index
+		}
+	}
+	return -1
+}
+
+func (b Bitboard) ToSquares() []int {
+	var squares []int
+	bb := uint64(b)
+	for bb != 0 {
+		square := bits.TrailingZeros64(bb)
+		squares = append(squares, square)
+		bb &= bb - 1
+	}
+	return squares
 }
 
 func (b *Board) AllBitboards() []Bitboard {
@@ -188,23 +225,47 @@ func (b *Board) DebugPrint() {
 
 func (b *Board) GenMoves() []Move {
 	allMoves := []Move{}
-	empty := ^b.FilledSquares
 
 	if b.Turn {
-		for pos := 0; pos < 64; pos++ {
-			for i, bb := range []Bitboard{b.WKings, b.WQueens, b.WRooks, b.WBishops, b.WKnights, b.WPawns} {
-				if bb.IsSet(pos) {
-					switch i {
-					case 5:
-						allMoves = append(allMoves, bb<<8)
-						if !(b.FilledSquares.IsSet(pos - 8)) {
-							allMoves = append(allMoves, Move{pos, pos - 8})
-							if !(b.FilledSquares.IsSet(pos - 16)) {
-								allMoves = append(allMoves, Move{pos, pos - 16})
-							}
-						}
-					}
+		for i, bb := range []Bitboard{b.WKings, b.WQueens, b.WRooks, b.WBishops, b.WKnights, b.WPawns} {
+			switch i {
+			case 5:
+				push1pawns := (bb >> 8) &^ b.FilledSquares
+				after := push1pawns.ToSquares()
+				for _, v := range after {
+					Move := Move{v + 8, v}
+					allMoves = append(allMoves, Move)
 				}
+				push2pawns := ((bb & WPawnStartRank) >> 16) &^ b.FilledSquares
+				after = push2pawns.ToSquares()
+				//fmt.Println(after)
+				for _, v := range after {
+					Move := Move{v + 16, v}
+					allMoves = append(allMoves, Move)
+				}
+
+				opponentpieces := b.OpponentPieces()
+				leftcapture := ((bb &^ FileH) >> 9) & opponentpieces
+				after = leftcapture.ToSquares()
+				for _, v := range after {
+					Move := Move{v + 9, v}
+					allMoves = append(allMoves, Move)
+				}
+
+				rightcapture := ((bb &^ FileA) >> 7) & opponentpieces
+				after = rightcapture.ToSquares()
+				for _, v := range after {
+					Move := Move{v + 7, v}
+					allMoves = append(allMoves, Move)
+				}
+
+				/*allMoves = append(allMoves, bb<<8)
+				if !(b.FilledSquares.IsSet(pos - 8)) {
+					allMoves = append(allMoves, Move{pos, pos - 8})
+					if !(b.FilledSquares.IsSet(pos - 16)) {
+						allMoves = append(allMoves, Move{pos, pos - 16})
+					}
+				}*/
 			}
 		}
 	}
