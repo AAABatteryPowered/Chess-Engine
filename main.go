@@ -7,16 +7,10 @@ import (
 
 func main() {
 	b := &board.Board{}
-	b.FromFen("rnbqkbnr/1p1p1p1p/8/p1p1p1p1/1P1P1P1P/8/P1P1P1P1/RNBQKBNR")
+	b.FromFen("8/8/8/3K4/8/8/8/8")
 	b.SetTurn(true)
 
-	fmt.Println(len(b.GenMoves()))
-	fmt.Println(b.GenMoves())
-	b.DebugPrint()
-
-	thing := board.GeneratePrecomputedTables()
-	for i := 0; i < 4; i++ {
-		thing.King[i].DebugPrint()
-		fmt.Println()
-	}
+	moves := b.GenMoves()
+	fmt.Println(moves)
+	fmt.Println(len(moves))
 }

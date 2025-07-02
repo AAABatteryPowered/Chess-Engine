@@ -64,7 +64,7 @@ func (b *Bitboard) Toggle(pos int) {
 }
 
 func (b *Board) Pieces() (Bitboard, Bitboard) {
-	if b.Turn {
+	if !b.Turn {
 		return b.BKings | b.BQueens | b.BRooks | b.BBishops | b.BKnights | b.BPawns, b.WKings | b.WQueens | b.WRooks | b.WBishops | b.WKnights | b.WPawns
 	} else {
 		return b.WKings | b.WQueens | b.WRooks | b.WBishops | b.WKnights | b.WPawns, b.BKings | b.BQueens | b.BRooks | b.BBishops | b.BKnights | b.BPawns
@@ -231,7 +231,7 @@ func (b *Board) DebugPrint() {
 }
 
 func (b Bitboard) DebugPrint() {
-	for rank := 7; rank >= 0; rank-- {
+	for rank := 0; rank < 8; rank++ {
 		for file := 0; file < 8; file++ {
 			square := rank*8 + file
 			if (b>>square)&1 == 1 {
@@ -269,13 +269,19 @@ var precomped *preCompTables = GeneratePrecomputedTables()
 
 func (b *Board) GenMoves() []Move {
 	allMoves := []Move{}
-	opponentpieces, ourpieces := b.Pieces()
+	ourpieces, opponentpieces := b.Pieces()
 
 	if b.Turn {
 		for i, bb := range []Bitboard{b.WKings, b.WQueens, b.WRooks, b.WBishops, b.WKnights, b.WPawns} {
 			switch i {
-			case 1:
-				//adjacentking := precomped.King[i] &^ ourpieces
+			case 0:
+				square := bits.TrailingZeros64(uint64(bb))
+				adjacentking := precomped.King[square] &^ ourpieces
+				after := adjacentking.ToSquares()
+				for _, v := range after {
+					Move := Move{square, v}
+					allMoves = append(allMoves, Move)
+				}
 			case 5:
 				push1pawns := (bb >> 8) &^ b.FilledSquares
 				after := push1pawns.ToSquares()
