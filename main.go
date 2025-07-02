@@ -13,4 +13,10 @@ func main() {
 	fmt.Println(len(b.GenMoves()))
 	fmt.Println(b.GenMoves())
 	b.DebugPrint()
+
+	thing := board.GeneratePrecomputedTables()
+	for i := 0; i < 4; i++ {
+		thing.King[i].DebugPrint()
+		fmt.Println()
+	}
 }

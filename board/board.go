@@ -37,6 +37,13 @@ type Board struct {
 	Turn          bool
 }
 
+type preCompTables struct {
+	King   [64]Bitboard
+	Rook   [64]Bitboard
+	Knight [64]Bitboard
+	Bishop [64]Bitboard
+}
+
 type Move struct {
 	From int
 	To   int
@@ -56,11 +63,11 @@ func (b *Bitboard) Toggle(pos int) {
 	*b ^= 1 << pos
 }
 
-func (b *Board) OpponentPieces() Bitboard {
+func (b *Board) Pieces() (Bitboard, Bitboard) {
 	if b.Turn {
-		return b.BKings | b.BQueens | b.BRooks | b.BBishops | b.BKnights | b.BPawns
+		return b.BKings | b.BQueens | b.BRooks | b.BBishops | b.BKnights | b.BPawns, b.WKings | b.WQueens | b.WRooks | b.WBishops | b.WKnights | b.WPawns
 	} else {
-		return b.WKings | b.WQueens | b.WRooks | b.WBishops | b.WKnights | b.WPawns
+		return b.WKings | b.WQueens | b.WRooks | b.WBishops | b.WKnights | b.WPawns, b.BKings | b.BQueens | b.BRooks | b.BBishops | b.BKnights | b.BPawns
 	}
 }
 
@@ -223,12 +230,52 @@ func (b *Board) DebugPrint() {
 	fmt.Println(finalstr)
 }
 
+func (b Bitboard) DebugPrint() {
+	for rank := 7; rank >= 0; rank-- {
+		for file := 0; file < 8; file++ {
+			square := rank*8 + file
+			if (b>>square)&1 == 1 {
+				fmt.Print("1 ")
+			} else {
+				fmt.Print("0 ")
+			}
+		}
+		fmt.Println()
+	}
+}
+
+func GeneratePrecomputedTables() *preCompTables {
+	precomp := &preCompTables{}
+
+	for i := 0; i < 64; i++ {
+		b := Bitboard(1 << i)
+
+		north := b << 8
+		south := b >> 8
+		east := (b << 1) &^ FileA
+		west := (b >> 1) &^ FileH
+		northEast := (b << 9) &^ FileA
+		northWest := (b << 7) &^ FileH
+		southEast := (b >> 7) &^ FileA
+		southWest := (b >> 9) &^ FileH
+
+		precomp.King[i] = north | south | east | west | northEast | northWest | southEast | southWest
+	}
+
+	return precomp
+}
+
+var precomped *preCompTables = GeneratePrecomputedTables()
+
 func (b *Board) GenMoves() []Move {
 	allMoves := []Move{}
+	opponentpieces, ourpieces := b.Pieces()
 
 	if b.Turn {
 		for i, bb := range []Bitboard{b.WKings, b.WQueens, b.WRooks, b.WBishops, b.WKnights, b.WPawns} {
 			switch i {
+			case 1:
+				//adjacentking := precomped.King[i] &^ ourpieces
 			case 5:
 				push1pawns := (bb >> 8) &^ b.FilledSquares
 				after := push1pawns.ToSquares()
@@ -244,7 +291,6 @@ func (b *Board) GenMoves() []Move {
 					allMoves = append(allMoves, Move)
 				}
 
-				opponentpieces := b.OpponentPieces()
 				leftcapture := ((bb &^ FileH) >> 9) & opponentpieces
 				after = leftcapture.ToSquares()
 				for _, v := range after {
