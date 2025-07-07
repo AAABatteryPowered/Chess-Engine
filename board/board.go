@@ -6,8 +6,10 @@ import (
 )
 
 const (
-	FileA Bitboard = 0x0101010101010101
-	FileH Bitboard = 0x8080808080808080
+	FileA  Bitboard = 0x0101010101010101
+	FileH  Bitboard = 0x8080808080808080
+	FileAB Bitboard = 0x303030303030303
+	FileGH Bitboard = 0xC0C0C0C0C0C0C0C0
 
 	WPawnStartRank Bitboard = 0x00FF000000000000
 )
@@ -259,6 +261,14 @@ func GeneratePrecomputedTables() *preCompTables {
 		southEast := (b >> 7) &^ FileA
 		southWest := (b >> 9) &^ FileH
 
+		l1 := (b >> 1) & Bitboard(0x7f7f7f7f7f7f7f7f)
+		l2 := (b >> 2) & Bitboard(0x3f3f3f3f3f3f3f3f)
+		r1 := (b << 1) & Bitboard(0xfefefefefefefefe)
+		r2 := (b << 2) & Bitboard(0xfcfcfcfcfcfcfcfc)
+		h1 := l1 | r1
+		h2 := l2 | r2
+
+		precomp.Knight[i] = (h1 << 16) | (h1 >> 16) | (h2 << 8) | (h2 >> 8)
 		precomp.King[i] = north | south | east | west | northEast | northWest | southEast | southWest
 	}
 
@@ -266,6 +276,19 @@ func GeneratePrecomputedTables() *preCompTables {
 }
 
 var precomped *preCompTables = GeneratePrecomputedTables()
+
+func TrailingZerosLoop(b Bitboard) []int {
+	var squareslist []int
+	bb := uint64(b)
+	for bb != 0 {
+		square := bits.TrailingZeros64(bb)
+		fmt.Println(square)
+		squareslist = append(squareslist, square)
+
+		bb &= bb - 1
+	}
+	return squareslist
+}
 
 func (b *Board) GenMoves() []Move {
 	allMoves := []Move{}
@@ -276,12 +299,30 @@ func (b *Board) GenMoves() []Move {
 			switch i {
 			case 0:
 				square := bits.TrailingZeros64(uint64(bb))
-				adjacentking := precomped.King[square] &^ ourpieces
-				after := adjacentking.ToSquares()
-				for _, v := range after {
-					Move := Move{square, v}
-					allMoves = append(allMoves, Move)
+				if square < 64 {
+					adjacentking := precomped.King[square] &^ ourpieces
+					after := adjacentking.ToSquares()
+					for _, v := range after {
+						Move := Move{square, v}
+						allMoves = append(allMoves, Move)
+					}
 				}
+
+			case 4:
+				fmt.Println(bb)
+				squares := TrailingZerosLoop(bb)
+				for _, square := range squares {
+					fmt.Println(squares)
+					if square < 64 {
+						adjacentknight := precomped.Knight[square] &^ ourpieces
+						after := adjacentknight.ToSquares()
+						for _, v := range after {
+							Move := Move{square, v}
+							allMoves = append(allMoves, Move)
+						}
+					}
+				}
+
 			case 5:
 				push1pawns := (bb >> 8) &^ b.FilledSquares
 				after := push1pawns.ToSquares()
