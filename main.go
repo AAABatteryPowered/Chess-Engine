@@ -7,10 +7,12 @@ import (
 
 func main() {
 	b := &board.Board{}
-	b.FromFen("8/8/8/0N7/8/8/8/8")
+	b.FromFen("8/8/8/8/8/8/3P4/8")
 	b.SetTurn(true)
 
 	moves := b.GenMoves()
 	fmt.Println(moves)
 	fmt.Println(len(moves))
 }
+
+//put a super-piece on the square the king is on and if it can attack a piece like a rook or bishop then the king is in check aura farm

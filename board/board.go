@@ -41,9 +41,8 @@ type Board struct {
 
 type preCompTables struct {
 	King   [64]Bitboard
-	Rook   [64]Bitboard
 	Knight [64]Bitboard
-	Bishop [64]Bitboard
+	Rook   [64]Bitboard
 }
 
 type Move struct {
@@ -246,6 +245,38 @@ func (b Bitboard) DebugPrint() {
 	}
 }
 
+func (b *Board) FollowRay(turn bool, piecetype int, direction int, recurringmoves *[]Move) *[]Move {
+	var raymoves []Move = *recurringmoves
+	if recurringmoves == nil {
+		raymoves = make([]Move, 1)
+	}
+
+	if turn {
+		if piecetype == 1 {
+			if direction == 1 {
+				for (b.WRooks << 8 &^ b.FilledSquares) > 0 {
+					b.WRooks = b.WRooks << 8 &^ b.FilledSquares
+					append(raymoves)
+					b.FollowRay(turn, piecetype, direction, &raymoves)
+				}
+			}
+		}
+	}
+
+	return &raymoves
+}
+
+func RookDepth(startsquare int, depth int) *[]Move {
+	var b Bitboard = 0
+	b.Set(startsquare)
+
+	north := b << (8 * depth) // &^ b.w
+	south := b >> (8 * depth)
+	east := (b << depth) &^ FileA
+	west := (b >> depth) &^ FileH
+
+}
+
 func GeneratePrecomputedTables() *preCompTables {
 	precomp := &preCompTables{}
 
@@ -270,6 +301,7 @@ func GeneratePrecomputedTables() *preCompTables {
 
 		precomp.Knight[i] = (h1 << 16) | (h1 >> 16) | (h2 << 8) | (h2 >> 8)
 		precomp.King[i] = north | south | east | west | northEast | northWest | southEast | southWest
+		precomp.Rook[i] = north | south | east | west
 	}
 
 	return precomp
@@ -282,7 +314,6 @@ func TrailingZerosLoop(b Bitboard) []int {
 	bb := uint64(b)
 	for bb != 0 {
 		square := bits.TrailingZeros64(bb)
-		fmt.Println(square)
 		squareslist = append(squareslist, square)
 
 		bb &= bb - 1
@@ -290,11 +321,19 @@ func TrailingZerosLoop(b Bitboard) []int {
 	return squareslist
 }
 
+func (b *Board) IsInCheck() bool {
+
+	return false
+}
+
 func (b *Board) GenMoves() []Move {
 	allMoves := []Move{}
 	ourpieces, opponentpieces := b.Pieces()
 
 	if b.Turn {
+		if b.IsInCheck() {
+			return nil
+		}
 		for i, bb := range []Bitboard{b.WKings, b.WQueens, b.WRooks, b.WBishops, b.WKnights, b.WPawns} {
 			switch i {
 			case 0:
@@ -308,11 +347,22 @@ func (b *Board) GenMoves() []Move {
 					}
 				}
 
-			case 4:
-				fmt.Println(bb)
+			case 2:
 				squares := TrailingZerosLoop(bb)
 				for _, square := range squares {
-					fmt.Println(squares)
+					if square < 64 {
+						adjacentrook := precomped.Rook[square] &^ ourpieces
+						after := adjacentknight.ToSquares()
+						for _, v := range after {
+							Move := Move{square, v}
+							allMoves = append(allMoves, Move)
+						}
+					}
+				}
+
+			case 4:
+				squares := TrailingZerosLoop(bb)
+				for _, square := range squares {
 					if square < 64 {
 						adjacentknight := precomped.Knight[square] &^ ourpieces
 						after := adjacentknight.ToSquares()
@@ -332,7 +382,6 @@ func (b *Board) GenMoves() []Move {
 				}
 				push2pawns := ((bb & WPawnStartRank) >> 16) &^ b.FilledSquares
 				after = push2pawns.ToSquares()
-				//fmt.Println(after)
 				for _, v := range after {
 					Move := Move{v + 16, v}
 					allMoves = append(allMoves, Move)
@@ -351,14 +400,6 @@ func (b *Board) GenMoves() []Move {
 					Move := Move{v + 7, v}
 					allMoves = append(allMoves, Move)
 				}
-
-				/*allMoves = append(allMoves, bb<<8)
-				if !(b.FilledSquares.IsSet(pos - 8)) {
-					allMoves = append(allMoves, Move{pos, pos - 8})
-					if !(b.FilledSquares.IsSet(pos - 16)) {
-						allMoves = append(allMoves, Move{pos, pos - 16})
-					}
-				}*/
 			}
 		}
 	}
