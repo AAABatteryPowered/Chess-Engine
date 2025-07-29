@@ -270,10 +270,14 @@ func RookDepth(startsquare int, depth int) *[]Move {
 	var b Bitboard = 0
 	b.Set(startsquare)
 
+	var rdepthmoves []Move
+
 	north := b << (8 * depth) // &^ b.w
 	south := b >> (8 * depth)
 	east := (b << depth) &^ FileA
 	west := (b >> depth) &^ FileH
+
+	rdepthmoves = append(rdepthmoves, north)
 
 }
 
@@ -351,6 +355,7 @@ func (b *Board) GenMoves() []Move {
 				squares := TrailingZerosLoop(bb)
 				for _, square := range squares {
 					if square < 64 {
+						for 
 						adjacentrook := precomped.Rook[square] &^ ourpieces
 						after := adjacentknight.ToSquares()
 						for _, v := range after {
