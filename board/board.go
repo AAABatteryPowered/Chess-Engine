@@ -3,6 +3,7 @@ package board
 import (
 	"fmt"
 	"math/bits"
+	"slices"
 )
 
 const (
@@ -245,7 +246,7 @@ func (b Bitboard) DebugPrint() {
 	}
 }
 
-func (b *Board) FollowRay(turn bool, piecetype int, direction int, recurringmoves *[]Move) *[]Move {
+/*func (b *Board) FollowRay(turn bool, piecetype int, direction int, recurringmoves *[]Move) *[]Move {
 	var raymoves []Move = *recurringmoves
 	if recurringmoves == nil {
 		raymoves = make([]Move, 1)
@@ -264,21 +265,25 @@ func (b *Board) FollowRay(turn bool, piecetype int, direction int, recurringmove
 	}
 
 	return &raymoves
-}
+}*/
 
-func RookDepth(startsquare int, depth int) *[]Move {
+func RookDepth(startsquare int, depth int) []Bitboard {
 	var b Bitboard = 0
 	b.Set(startsquare)
 
-	var rdepthmoves []Move
+	var bbs []Bitboard = make([]Bitboard, 0)
 
 	north := b << (8 * depth) // &^ b.w
 	south := b >> (8 * depth)
 	east := (b << depth) &^ FileA
 	west := (b >> depth) &^ FileH
 
-	rdepthmoves = append(rdepthmoves, north)
+	bbs = append(bbs, north)
+	bbs = append(bbs, south)
+	bbs = append(bbs, east)
+	bbs = append(bbs, west)
 
+	return bbs
 }
 
 func GeneratePrecomputedTables() *preCompTables {
@@ -330,6 +335,41 @@ func (b *Board) IsInCheck() bool {
 	return false
 }
 
+func RecurringRookDepth(bb *Board, turn bool, moves *[]Move) *[]Move {
+	var recurringrookmoves *[]Move = moves
+
+	var squares []int
+	if !turn {
+		squares = TrailingZerosLoop(bb.BRooks)
+	} else {
+		squares = TrailingZerosLoop(bb.WRooks)
+	}
+
+	for _, startsquare := range squares {
+		if startsquare < 64 {
+			for n := range 8 {
+				moveboards := RookDepth(startsquare, n)
+				if len(moveboards) > 0 {
+					for i := range 4 {
+						targetsquare := bits.TrailingZeros64(uint64(moveboards[i]))
+						if !(targetsquare > 63) {
+							pieceat := bb.PieceAt(targetsquare)
+							if pieceat > 5 || pieceat < 0 {
+								//fmt.Println(fmt.Sprintf("%d wants to go to %d", startsquare, targetsquare))
+								Move := Move{startsquare, targetsquare}
+								*recurringrookmoves = append(*recurringrookmoves, Move)
+
+							}
+						}
+
+					}
+				}
+			}
+		}
+	}
+	return recurringrookmoves
+}
+
 func (b *Board) GenMoves() []Move {
 	allMoves := []Move{}
 	ourpieces, opponentpieces := b.Pieces()
@@ -352,19 +392,9 @@ func (b *Board) GenMoves() []Move {
 				}
 
 			case 2:
-				squares := TrailingZerosLoop(bb)
-				for _, square := range squares {
-					if square < 64 {
-						for 
-						adjacentrook := precomped.Rook[square] &^ ourpieces
-						after := adjacentknight.ToSquares()
-						for _, v := range after {
-							Move := Move{square, v}
-							allMoves = append(allMoves, Move)
-						}
-					}
-				}
-
+				var placeholder []Move = make([]Move, 0)
+				n := RecurringRookDepth(b, b.Turn, &placeholder)
+				allMoves = slices.Concat(allMoves, *n)
 			case 4:
 				squares := TrailingZerosLoop(bb)
 				for _, square := range squares {
