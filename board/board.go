@@ -347,21 +347,30 @@ func RecurringRookDepth(bb *Board, turn bool, moves *[]Move) *[]Move {
 
 	for _, startsquare := range squares {
 		if startsquare < 64 {
+			blocking := false
+			blockeddir := 1
 			for n := range 8 {
 				moveboards := RookDepth(startsquare, n)
 				if len(moveboards) > 0 {
 					for i := range 4 {
 						targetsquare := bits.TrailingZeros64(uint64(moveboards[i]))
-						if !(targetsquare > 63) {
+						//fmt.Println(blocking && ((targetsquare-blockeddir)%8 == 0))
+						fmt.Println(blocking, targetsquare, blockeddir)
+						if blocking && ((targetsquare-blockeddir)%8 == 0) {
+							continue
+						}
+						if targetsquare < 64 {
 							pieceat := bb.PieceAt(targetsquare)
 							if pieceat > 5 || pieceat < 0 {
 								//fmt.Println(fmt.Sprintf("%d wants to go to %d", startsquare, targetsquare))
 								Move := Move{startsquare, targetsquare}
 								*recurringrookmoves = append(*recurringrookmoves, Move)
-
+								//blocking = false
+							} else {
+								blockeddir = targetsquare
+								blocking = true
 							}
 						}
-
 					}
 				}
 			}
