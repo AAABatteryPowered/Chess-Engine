@@ -278,10 +278,20 @@ func RookDepth(startsquare int, depth int) []Bitboard {
 	east := (b << depth) &^ FileA
 	west := (b >> depth) &^ FileH
 
+	fmt.Println(fmt.Sprintf("%d,sigma %d", depth, 7-(startsquare%8)))
+	if depth <= 7-(startsquare%8) {
+		bbs = append(bbs, east)
+	} else {
+		bbs = append(bbs, 0)
+	}
+	if depth <= (startsquare % 8) {
+		bbs = append(bbs, west)
+	} else {
+		bbs = append(bbs, 0)
+	}
+
 	bbs = append(bbs, north)
 	bbs = append(bbs, south)
-	bbs = append(bbs, east)
-	bbs = append(bbs, west)
 
 	return bbs
 }
@@ -349,14 +359,14 @@ func RecurringRookDepth(bb *Board, turn bool, moves *[]Move) *[]Move {
 		if startsquare < 64 {
 			blocking := false
 			blockeddir := 1
-			for n := range 8 {
-				moveboards := RookDepth(startsquare, n)
+			for n := range 7 {
+				moveboards := RookDepth(startsquare, n+1)
 				if len(moveboards) > 0 {
 					for i := range 4 {
 						targetsquare := bits.TrailingZeros64(uint64(moveboards[i]))
 						//fmt.Println(blocking && ((targetsquare-blockeddir)%8 == 0))
-						fmt.Println(blocking, targetsquare, blockeddir)
-						if blocking && ((targetsquare-blockeddir)%8 == 0) {
+						//fmt.Println(blocking)
+						if blocking && ((targetsquare-blockeddir) > 0 && (targetsquare-blockeddir) < 7-(startsquare%8)) {
 							continue
 						}
 						if targetsquare < 64 {
@@ -367,6 +377,7 @@ func RecurringRookDepth(bb *Board, turn bool, moves *[]Move) *[]Move {
 								*recurringrookmoves = append(*recurringrookmoves, Move)
 								//blocking = false
 							} else {
+								fmt.Println(pieceat)
 								blockeddir = targetsquare
 								blocking = true
 							}
