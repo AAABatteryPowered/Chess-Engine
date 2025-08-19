@@ -278,7 +278,6 @@ func RookDepth(startsquare int, depth int) []Bitboard {
 	east := (b << depth) &^ FileA
 	west := (b >> depth) &^ FileH
 
-	fmt.Println(fmt.Sprintf("%d,sigma %d", depth, 7-(startsquare%8)))
 	if depth <= 7-(startsquare%8) {
 		bbs = append(bbs, east)
 	} else {
@@ -296,23 +295,45 @@ func RookDepth(startsquare int, depth int) []Bitboard {
 	return bbs
 }
 
-func BishopDepth(startsquare int, depth int) []Bitboard {
+func BishopDepth(startsquare int, depth int) ([]Bitboard, []bool) {
 	var b Bitboard = 0
 	b.Set(startsquare)
 
 	var bbs []Bitboard = make([]Bitboard, 0)
+	returningbools := make([]bool, 4)
 
 	nw := b << (7 * depth) &^ FileH
 	ne := b << (9 * depth) &^ FileA
-	sw := b >> (9 * depth)
-	se := b >> (7 * depth)
+	sw := b >> (9 * depth) &^ FileH
+	se := b >> (7 * depth) &^ FileA
 
 	bbs = append(bbs, nw)
 	bbs = append(bbs, ne)
 	bbs = append(bbs, sw)
 	bbs = append(bbs, se)
 
-	return bbs
+	if nw == 0 {
+		returningbools[0] = false
+	} else {
+		returningbools[0] = true
+	}
+	if ne == 0 {
+		returningbools[1] = false
+	} else {
+		returningbools[1] = true
+	}
+	if sw == 0 {
+		returningbools[2] = false
+	} else {
+		returningbools[2] = true
+	}
+	if se == 0 {
+		returningbools[3] = false
+	} else {
+		returningbools[3] = true
+	}
+
+	return bbs, returningbools
 }
 
 func GeneratePrecomputedTables() *preCompTables {
@@ -375,19 +396,21 @@ func RecurringRookDepth(bb *Board, turn bool, moves *[]Move) *[]Move {
 	}
 
 	for _, startsquare := range squares {
+		var savededgeblockeddirs []bool = make([]bool, 4)
+		savededgeblockeddirs[0] = true
+		savededgeblockeddirs[1] = true
+		savededgeblockeddirs[2] = true
+		savededgeblockeddirs[3] = true
 		if startsquare < 64 {
-			blocking := false
-			blockeddir := 1
 			for n := range 7 {
 				moveboards := RookDepth(startsquare, n+1)
 				if len(moveboards) > 0 {
 					for i := range 4 {
-						targetsquare := bits.TrailingZeros64(uint64(moveboards[i]))
-						//fmt.Println(blocking && ((targetsquare-blockeddir)%8 == 0))
-						//fmt.Println(blocking)
-						if blocking && ((targetsquare-blockeddir) > 0 && (targetsquare-blockeddir) < 7-(startsquare%8)) {
+						if savededgeblockeddirs[i] == false {
 							continue
 						}
+						targetsquare := bits.TrailingZeros64(uint64(moveboards[i]))
+
 						if targetsquare < 64 {
 							pieceat := bb.PieceAt(targetsquare)
 							if pieceat > 5 || pieceat < 0 {
@@ -396,9 +419,8 @@ func RecurringRookDepth(bb *Board, turn bool, moves *[]Move) *[]Move {
 								*recurringrookmoves = append(*recurringrookmoves, Move)
 								//blocking = false
 							} else {
-								fmt.Println(pieceat)
-								blockeddir = targetsquare
-								blocking = true
+								fmt.Println(targetsquare)
+								savededgeblockeddirs[i] = false
 							}
 						}
 					}
@@ -420,29 +442,25 @@ func RecurringBishopDepth(bb *Board, turn bool, moves *[]Move) *[]Move {
 	}
 
 	for _, startsquare := range squares {
+		var savededgeblockeddirs []bool
 		if startsquare < 64 {
-			blocking := false
-			blockeddir := 1
 			for n := range 7 {
-				moveboards := BishopDepth(startsquare, n+1)
+				moveboards, edgeblockeddirs := BishopDepth(startsquare, n+1)
+				if savededgeblockeddirs == nil {
+					savededgeblockeddirs = edgeblockeddirs
+				}
+				for ss, v := range edgeblockeddirs {
+					if !v {
+						savededgeblockeddirs[ss] = false
+					}
+				}
+
 				if len(moveboards) > 0 {
 					for i := range 4 {
-						targetsquare := bits.TrailingZeros64(uint64(moveboards[i]))
-						//fmt.Println(blocking && ((targetsquare-blockeddir)%8 == 0))
-						//fmt.Println(blocking)
-						if blocking {
-							if startsquare-blockeddir%9 == 0 {
-								if targetsquare-blockeddir%9 == 0 {
-									continue
-								}
-							}
-							if startsquare-blockeddir%7 == 0 {
-								if targetsquare-blockeddir%7 == 0 {
-									continue
-								}
-							}
+						if savededgeblockeddirs[i] == false {
+							continue
 						}
-						fmt.Println(startsquare, targetsquare)
+						targetsquare := bits.TrailingZeros64(uint64(moveboards[i]))
 						if targetsquare < 64 {
 							pieceat := bb.PieceAt(targetsquare)
 							if pieceat > 5 || pieceat < 0 {
@@ -451,9 +469,7 @@ func RecurringBishopDepth(bb *Board, turn bool, moves *[]Move) *[]Move {
 								*recurringbishopmoves = append(*recurringbishopmoves, Move)
 								//blocking = false
 							} else {
-								fmt.Println(pieceat)
-								blockeddir = targetsquare
-								blocking = true
+								savededgeblockeddirs[i] = false
 							}
 						}
 					}
