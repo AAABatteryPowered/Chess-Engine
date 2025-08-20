@@ -302,10 +302,10 @@ func BishopDepth(startsquare int, depth int) ([]Bitboard, []bool) {
 	var bbs []Bitboard = make([]Bitboard, 0)
 	returningbools := make([]bool, 4)
 
-	nw := b << (7 * depth) &^ FileH
-	ne := b << (9 * depth) &^ FileA
-	sw := b >> (9 * depth) &^ FileH
-	se := b >> (7 * depth) &^ FileA
+	sw := b << (7 * depth) &^ FileH
+	se := b << (9 * depth) &^ FileA
+	nw := b >> (9 * depth) &^ FileH
+	ne := b >> (7 * depth) &^ FileA
 
 	bbs = append(bbs, nw)
 	bbs = append(bbs, ne)
@@ -336,6 +336,72 @@ func BishopDepth(startsquare int, depth int) ([]Bitboard, []bool) {
 	return bbs, returningbools
 }
 
+func QueenDepth(startsquare int, depth int) ([]Bitboard, []bool) {
+	var b Bitboard = 0
+	b.Set(startsquare)
+
+	var bbs []Bitboard = make([]Bitboard, 0)
+	returningbools := make([]bool, 8)
+
+	north := b << (8 * depth) // &^ b.w
+	south := b >> (8 * depth)
+	east := (b << depth) &^ FileA
+	west := (b >> depth) &^ FileH
+	nw := b << (7 * depth) &^ FileH
+	ne := b << (9 * depth) &^ FileA
+	sw := b >> (9 * depth) &^ FileH
+	se := b >> (7 * depth) &^ FileA
+
+	if depth <= 7-(startsquare%8) {
+		bbs = append(bbs, east)
+	} else {
+		bbs = append(bbs, 0)
+	}
+	if depth <= (startsquare % 8) {
+		bbs = append(bbs, west)
+	} else {
+		bbs = append(bbs, 0)
+	}
+
+	//e,w,nw,ne,sw,se,n,s
+
+	bbs = append(bbs, nw)
+	bbs = append(bbs, ne)
+	bbs = append(bbs, sw)
+	bbs = append(bbs, se)
+
+	if nw == 0 {
+		returningbools[2] = false
+	} else {
+		returningbools[2] = true
+	}
+	if ne == 0 {
+		returningbools[3] = false
+	} else {
+		returningbools[3] = true
+	}
+	if sw == 0 {
+		returningbools[4] = false
+	} else {
+		returningbools[4] = true
+	}
+	if se == 0 {
+		returningbools[5] = false
+	} else {
+		returningbools[5] = true
+	}
+
+	returningbools[0] = true
+	returningbools[1] = true
+	returningbools[6] = true
+	returningbools[7] = true
+
+	bbs = append(bbs, north)
+	bbs = append(bbs, south)
+
+	return bbs, returningbools
+}
+
 func GeneratePrecomputedTables() *preCompTables {
 	precomp := &preCompTables{}
 
@@ -360,7 +426,6 @@ func GeneratePrecomputedTables() *preCompTables {
 
 		precomp.Knight[i] = (h1 << 16) | (h1 >> 16) | (h2 << 8) | (h2 >> 8)
 		precomp.King[i] = north | south | east | west | northEast | northWest | southEast | southWest
-		precomp.Rook[i] = north | south | east | west
 	}
 
 	return precomp
@@ -406,18 +471,21 @@ func RecurringRookDepth(bb *Board, turn bool, moves *[]Move) *[]Move {
 				moveboards := RookDepth(startsquare, n+1)
 				if len(moveboards) > 0 {
 					for i := range 4 {
-						if savededgeblockeddirs[i] == false {
+						if !savededgeblockeddirs[i] {
 							continue
 						}
 						targetsquare := bits.TrailingZeros64(uint64(moveboards[i]))
 
 						if targetsquare < 64 {
 							pieceat := bb.PieceAt(targetsquare)
-							if pieceat > 5 || pieceat < 0 {
+							if pieceat > 5 {
 								//fmt.Println(fmt.Sprintf("%d wants to go to %d", startsquare, targetsquare))
 								Move := Move{startsquare, targetsquare}
 								*recurringrookmoves = append(*recurringrookmoves, Move)
-								//blocking = false
+								savededgeblockeddirs[i] = false
+							} else if pieceat == -1 {
+								Move := Move{startsquare, targetsquare}
+								*recurringrookmoves = append(*recurringrookmoves, Move)
 							} else {
 								fmt.Println(targetsquare)
 								savededgeblockeddirs[i] = false
@@ -449,12 +517,12 @@ func RecurringBishopDepth(bb *Board, turn bool, moves *[]Move) *[]Move {
 				if savededgeblockeddirs == nil {
 					savededgeblockeddirs = edgeblockeddirs
 				}
+				fmt.Println(moveboards)
 				for ss, v := range edgeblockeddirs {
 					if !v {
 						savededgeblockeddirs[ss] = false
 					}
 				}
-
 				if len(moveboards) > 0 {
 					for i := range 4 {
 						if savededgeblockeddirs[i] == false {
@@ -463,12 +531,16 @@ func RecurringBishopDepth(bb *Board, turn bool, moves *[]Move) *[]Move {
 						targetsquare := bits.TrailingZeros64(uint64(moveboards[i]))
 						if targetsquare < 64 {
 							pieceat := bb.PieceAt(targetsquare)
-							if pieceat > 5 || pieceat < 0 {
+							if pieceat > 5 {
 								//fmt.Println(fmt.Sprintf("%d wants to go to %d", startsquare, targetsquare))
 								Move := Move{startsquare, targetsquare}
 								*recurringbishopmoves = append(*recurringbishopmoves, Move)
-								//blocking = false
+								savededgeblockeddirs[i] = false
+							} else if pieceat == -1 {
+								Move := Move{startsquare, targetsquare}
+								*recurringbishopmoves = append(*recurringbishopmoves, Move)
 							} else {
+								fmt.Println(targetsquare)
 								savededgeblockeddirs[i] = false
 							}
 						}
@@ -478,6 +550,60 @@ func RecurringBishopDepth(bb *Board, turn bool, moves *[]Move) *[]Move {
 		}
 	}
 	return recurringbishopmoves
+}
+
+func RecurringQueenDepth(bb *Board, turn bool, moves *[]Move) *[]Move {
+	var recurringqueenmoves *[]Move = moves
+
+	var squares []int
+	if !turn {
+		squares = TrailingZerosLoop(bb.BQueens)
+	} else {
+		squares = TrailingZerosLoop(bb.WQueens)
+	}
+
+	for _, startsquare := range squares {
+		var savededgeblockeddirs []bool
+		if startsquare < 64 {
+			for n := range 7 {
+				moveboards, edgeblockeddirs := QueenDepth(startsquare, n+1)
+				if savededgeblockeddirs == nil {
+					savededgeblockeddirs = edgeblockeddirs
+				}
+				for ss, v := range edgeblockeddirs {
+					if !v {
+						savededgeblockeddirs[ss] = false
+					}
+				}
+
+				if len(moveboards) > 0 {
+					for i := range 8 {
+
+						if savededgeblockeddirs[i] == false {
+							continue
+						}
+						targetsquare := bits.TrailingZeros64(uint64(moveboards[i]))
+						if targetsquare < 64 {
+							pieceat := bb.PieceAt(targetsquare)
+							if pieceat > 5 {
+								//fmt.Println(fmt.Sprintf("%d wants to go to %d", startsquare, targetsquare))
+								Move := Move{startsquare, targetsquare}
+								*recurringqueenmoves = append(*recurringqueenmoves, Move)
+								savededgeblockeddirs[i] = false
+							} else if pieceat == -1 {
+								Move := Move{startsquare, targetsquare}
+								*recurringqueenmoves = append(*recurringqueenmoves, Move)
+							} else {
+								fmt.Println(targetsquare)
+								savededgeblockeddirs[i] = false
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	return recurringqueenmoves
 }
 
 func (b *Board) GenMoves() []Move {
@@ -500,7 +626,10 @@ func (b *Board) GenMoves() []Move {
 						allMoves = append(allMoves, Move)
 					}
 				}
-
+			case 1:
+				var placeholder []Move = make([]Move, 0)
+				n := RecurringQueenDepth(b, b.Turn, &placeholder)
+				allMoves = slices.Concat(allMoves, *n)
 			case 2:
 				var placeholder []Move = make([]Move, 0)
 				n := RecurringRookDepth(b, b.Turn, &placeholder)

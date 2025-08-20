@@ -7,7 +7,7 @@ import (
 
 func main() {
 	b := &board.Board{}
-	b.FromFen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPP1/RNBQKBNR")
+	b.FromFen("8/8/8/8/8/8/8/3Q4")
 	b.SetTurn(true)
 
 	moves := b.GenMoves()
