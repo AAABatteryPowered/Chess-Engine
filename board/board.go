@@ -36,6 +36,11 @@ type Board struct {
 	BKnights Bitboard
 	BPawns   Bitboard
 
+	WCastleQ bool
+	WCastleK bool
+	BCastleQ bool
+	BCastleK bool
+
 	FilledSquares Bitboard
 	Turn          bool
 }
@@ -266,6 +271,71 @@ func (b Bitboard) DebugPrint() {
 
 	return &raymoves
 }*/
+
+func IsKingAttacked(b *Board) (bool, []Move) {
+	nextturnboard := *b
+	nextturnboard.SetTurn(!b.Turn)
+	allMoves := nextturnboard.GenMoves()
+
+	var kingboard Bitboard
+
+	if b.Turn {
+		kingboard = b.WKings
+	} else {
+		kingboard = b.BKings
+	}
+
+	for _, move := range allMoves {
+		if move.To == kingboard.ToSquares()[0] {
+			return true, allMoves
+		}
+	}
+
+	return false, allMoves
+}
+
+func (b *Board) Moves() []Move {
+	incheck, _ := IsKingAttacked(b)
+	fmt.Println(incheck)
+	ourmoves := b.GenMoves()
+	var filteredmoves []Move
+	if incheck {
+		for _, ourmove := range ourmoves {
+			copyboard := *b
+			copyboard.PlayMove(ourmove)
+			//_, _ := IsKingAttacked(b)
+			if !false {
+				filteredmoves = append(filteredmoves, ourmove)
+			}
+		}
+		return filteredmoves
+	}
+	return ourmoves
+}
+
+func (b *Board) PlayMove(move Move) {
+	movingpiece := b.PieceAt(move.From)
+	targetpiece := b.PieceAt(move.To)
+	allbb := b.AllBitboards()
+	if targetpiece > 5 {
+		// piece is black
+		if b.Turn {
+			allbb[movingpiece].Clear(move.From)
+			allbb[targetpiece].Clear(move.To)
+			allbb[movingpiece].Set(move.To)
+		}
+	} else if targetpiece == -1 {
+		allbb[movingpiece].Clear(move.From)
+		allbb[movingpiece].Set(move.To)
+	} else if targetpiece > -1 && targetpiece < 6 {
+		// piece is white
+		if !b.Turn {
+			allbb[movingpiece].Clear(move.From)
+			allbb[targetpiece].Clear(move.To)
+			allbb[movingpiece].Set(move.To)
+		}
+	}
+}
 
 func RookDepth(startsquare int, depth int) []Bitboard {
 	var b Bitboard = 0
