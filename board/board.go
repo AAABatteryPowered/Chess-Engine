@@ -41,6 +41,9 @@ type Board struct {
 	BCastleQ bool
 	BCastleK bool
 
+	HalfMoves int
+	FullMoves int
+
 	FilledSquares Bitboard
 	Turn          bool
 }
@@ -52,11 +55,23 @@ type preCompTables struct {
 }
 
 type Move struct {
-	From int
-	To   int
+	From   int
+	To     int
+	Castle int
 }
 
 type Bitboard uint64
+
+func algebraicToSquare(notation string) int {
+	if len(notation) != 2 {
+		return -1
+	}
+
+	file := int(notation[0] - 'a')
+	rank := int(notation[1] - '1')
+
+	return rank*8 + file
+}
 
 func (b *Bitboard) Set(pos int) {
 	*b |= 1 << pos
@@ -88,7 +103,9 @@ func (b *Board) SetTurn(t bool) {
 
 func (b *Board) FromFen(s string) {
 	posPointer := 0
-	for _, ch := range s {
+	var subdata string
+outerLoop:
+	for xx, ch := range s {
 		if ch >= '0' && ch <= '9' {
 			num := int(ch - '0')
 			posPointer += num
@@ -118,7 +135,6 @@ func (b *Board) FromFen(s string) {
 			b.WPawns.Set(posPointer)
 			b.FilledSquares.Set(posPointer)
 			posPointer += 1
-
 		case 'k':
 			b.BKings.Set(posPointer)
 			b.FilledSquares.Set(posPointer)
@@ -143,7 +159,47 @@ func (b *Board) FromFen(s string) {
 			b.BPawns.Set(posPointer)
 			b.FilledSquares.Set(posPointer)
 			posPointer += 1
+		case ' ':
+			subdata = s[xx+1 : len(s)]
+			break outerLoop
 		}
+	}
+	//w QKqk e3 41 20
+
+	for i, c := range subdata {
+		if i == 0 {
+			if c == 'w' {
+				b.Turn = true
+			} else {
+				b.Turn = false
+			}
+			continue
+		}
+		if i == 2 || i == 3 {
+			if c == 'Q' {
+				b.WCastleQ = true
+				continue
+			}
+			if c == 'K' {
+				b.WCastleK = true
+				continue
+			}
+		}
+		if i == 4 || i == 5 {
+			if c == 'q' {
+				b.BCastleQ = true
+				continue
+			}
+			if c == 'k' {
+				b.WCastleK = true
+				continue
+			}
+		}
+
+		if i == 6 || i == 7 || i == 8 {
+
+		}
+
 	}
 }
 
@@ -272,6 +328,20 @@ func (b Bitboard) DebugPrint() {
 	return &raymoves
 }*/
 
+func (b *Board) IsSquareAttacked(square int) bool {
+	nextturnboard := *b
+	nextturnboard.SetTurn(!b.Turn)
+	allMoves := nextturnboard.GenMoves()
+
+	for _, move := range allMoves {
+		if move.To == square {
+			return true
+		}
+	}
+
+	return false
+}
+
 func IsKingAttacked(b *Board) (bool, []Move) {
 	nextturnboard := *b
 	nextturnboard.SetTurn(!b.Turn)
@@ -296,15 +366,14 @@ func IsKingAttacked(b *Board) (bool, []Move) {
 
 func (b *Board) Moves() []Move {
 	incheck, _ := IsKingAttacked(b)
-	fmt.Println(incheck)
 	ourmoves := b.GenMoves()
 	var filteredmoves []Move
 	if incheck {
 		for _, ourmove := range ourmoves {
 			copyboard := *b
 			copyboard.PlayMove(ourmove)
-			//_, _ := IsKingAttacked(b)
-			if !false {
+			stillincheck, _ := IsKingAttacked(&copyboard)
+			if !stillincheck {
 				filteredmoves = append(filteredmoves, ourmove)
 			}
 		}
@@ -316,20 +385,34 @@ func (b *Board) Moves() []Move {
 func (b *Board) PlayMove(move Move) {
 	movingpiece := b.PieceAt(move.From)
 	targetpiece := b.PieceAt(move.To)
+	castling := move.Castle
 	allbb := b.AllBitboards()
+	if castling != 0 {
+		if castling == 1 {
+			b.FilledSquares.Clear(0)
+			b.FilledSquares.Clear(4)
+			allbb[0].Clear(move.From) // white king
+			allbb[0].Set(2)
+			allbb[2].Clear(move.To) // white rook
+			allbb[2].Set(3)
+		}
+	}
 	if targetpiece > 5 {
 		// piece is black
 		if b.Turn {
+			b.FilledSquares.Clear(move.From)
 			allbb[movingpiece].Clear(move.From)
 			allbb[targetpiece].Clear(move.To)
 			allbb[movingpiece].Set(move.To)
 		}
 	} else if targetpiece == -1 {
+		b.FilledSquares.Clear(move.From)
 		allbb[movingpiece].Clear(move.From)
 		allbb[movingpiece].Set(move.To)
 	} else if targetpiece > -1 && targetpiece < 6 {
 		// piece is white
 		if !b.Turn {
+			b.FilledSquares.Clear(move.From)
 			allbb[movingpiece].Clear(move.From)
 			allbb[targetpiece].Clear(move.To)
 			allbb[movingpiece].Set(move.To)
@@ -550,11 +633,11 @@ func RecurringRookDepth(bb *Board, turn bool, moves *[]Move) *[]Move {
 							pieceat := bb.PieceAt(targetsquare)
 							if pieceat > 5 {
 								//fmt.Println(fmt.Sprintf("%d wants to go to %d", startsquare, targetsquare))
-								Move := Move{startsquare, targetsquare}
+								Move := Move{From: startsquare, To: targetsquare}
 								*recurringrookmoves = append(*recurringrookmoves, Move)
 								savededgeblockeddirs[i] = false
 							} else if pieceat == -1 {
-								Move := Move{startsquare, targetsquare}
+								Move := Move{From: startsquare, To: targetsquare}
 								*recurringrookmoves = append(*recurringrookmoves, Move)
 							} else {
 								fmt.Println(targetsquare)
@@ -603,11 +686,11 @@ func RecurringBishopDepth(bb *Board, turn bool, moves *[]Move) *[]Move {
 							pieceat := bb.PieceAt(targetsquare)
 							if pieceat > 5 {
 								//fmt.Println(fmt.Sprintf("%d wants to go to %d", startsquare, targetsquare))
-								Move := Move{startsquare, targetsquare}
+								Move := Move{From: startsquare, To: targetsquare}
 								*recurringbishopmoves = append(*recurringbishopmoves, Move)
 								savededgeblockeddirs[i] = false
 							} else if pieceat == -1 {
-								Move := Move{startsquare, targetsquare}
+								Move := Move{From: startsquare, To: targetsquare}
 								*recurringbishopmoves = append(*recurringbishopmoves, Move)
 							} else {
 								fmt.Println(targetsquare)
@@ -657,11 +740,11 @@ func RecurringQueenDepth(bb *Board, turn bool, moves *[]Move) *[]Move {
 							pieceat := bb.PieceAt(targetsquare)
 							if pieceat > 5 {
 								//fmt.Println(fmt.Sprintf("%d wants to go to %d", startsquare, targetsquare))
-								Move := Move{startsquare, targetsquare}
+								Move := Move{From: startsquare, To: targetsquare}
 								*recurringqueenmoves = append(*recurringqueenmoves, Move)
 								savededgeblockeddirs[i] = false
 							} else if pieceat == -1 {
-								Move := Move{startsquare, targetsquare}
+								Move := Move{From: startsquare, To: targetsquare}
 								*recurringqueenmoves = append(*recurringqueenmoves, Move)
 							} else {
 								fmt.Println(targetsquare)
@@ -692,7 +775,7 @@ func (b *Board) GenMoves() []Move {
 					adjacentking := precomped.King[square] &^ ourpieces
 					after := adjacentking.ToSquares()
 					for _, v := range after {
-						Move := Move{square, v}
+						Move := Move{From: square, To: v}
 						allMoves = append(allMoves, Move)
 					}
 				}
@@ -715,7 +798,7 @@ func (b *Board) GenMoves() []Move {
 						adjacentknight := precomped.Knight[square] &^ ourpieces
 						after := adjacentknight.ToSquares()
 						for _, v := range after {
-							Move := Move{square, v}
+							Move := Move{From: square, To: v}
 							allMoves = append(allMoves, Move)
 						}
 					}
@@ -725,28 +808,45 @@ func (b *Board) GenMoves() []Move {
 				push1pawns := (bb >> 8) &^ b.FilledSquares
 				after := push1pawns.ToSquares()
 				for _, v := range after {
-					Move := Move{v + 8, v}
+					Move := Move{From: v + 8, To: v}
 					allMoves = append(allMoves, Move)
 				}
 				push2pawns := ((bb & WPawnStartRank) >> 16) &^ b.FilledSquares
 				after = push2pawns.ToSquares()
 				for _, v := range after {
-					Move := Move{v + 16, v}
+					Move := Move{From: v + 16, To: v}
 					allMoves = append(allMoves, Move)
 				}
 
 				leftcapture := ((bb &^ FileH) >> 9) & opponentpieces
 				after = leftcapture.ToSquares()
 				for _, v := range after {
-					Move := Move{v + 9, v}
+					Move := Move{From: v + 9, To: v}
 					allMoves = append(allMoves, Move)
 				}
 
 				rightcapture := ((bb &^ FileA) >> 7) & opponentpieces
 				after = rightcapture.ToSquares()
 				for _, v := range after {
-					Move := Move{v + 7, v}
+					Move := Move{From: v + 7, To: v}
 					allMoves = append(allMoves, Move)
+				}
+			}
+		}
+		//castling
+		if b.WCastleQ {
+			if !(b.FilledSquares.IsSet(1) && b.FilledSquares.IsSet(2) && b.FilledSquares.IsSet(3)) {
+				if !(b.IsSquareAttacked(1) && b.IsSquareAttacked(2) && b.IsSquareAttacked(3)) {
+					move := Move{From: 4, To: 2, Castle: 1}
+					allMoves = append(allMoves, move)
+				}
+			}
+		}
+		if b.WCastleK {
+			if !(b.FilledSquares.IsSet(5) && b.FilledSquares.IsSet(6)) {
+				if !(b.IsSquareAttacked(5) && b.IsSquareAttacked(6)) {
+					move := Move{From: 4, To: 6, Castle: 2}
+					allMoves = append(allMoves, move)
 				}
 			}
 		}
