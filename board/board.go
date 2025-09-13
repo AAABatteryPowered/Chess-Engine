@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math/bits"
 	"slices"
+	"strconv"
+	"strings"
 )
 
 const (
@@ -40,6 +42,8 @@ type Board struct {
 	WCastleK bool
 	BCastleQ bool
 	BCastleK bool
+
+	EnPassantTarget int
 
 	HalfMoves int
 	FullMoves int
@@ -99,6 +103,21 @@ func (b Bitboard) IsSet(pos int) bool {
 
 func (b *Board) SetTurn(t bool) {
 	b.Turn = t
+}
+
+func notationToSquare(notation string) int {
+	if len(notation) != 2 {
+		return -1
+	}
+
+	file := notation[0] - 'a'
+	rank := notation[1] - '1'
+
+	if file < 0 || file > 7 || rank < 0 || rank > 7 {
+		return -1
+	}
+
+	return int(rank)*8 + int(file)
 }
 
 func (b *Board) FromFen(s string) {
@@ -166,41 +185,49 @@ outerLoop:
 	}
 	//w QKqk e3 41 20
 
-	for i, c := range subdata {
-		if i == 0 {
-			if c == 'w' {
-				b.Turn = true
-			} else {
-				b.Turn = false
+	for i, field := range strings.Fields(subdata) {
+		if field != "-" {
+			for _, runee := range field {
+				switch i + 1 {
+				case 1:
+					if field == "w" {
+						b.Turn = true
+					} else {
+						b.Turn = false
+					}
+				case 2:
+					if runee == 'Q' {
+						b.WCastleQ = true
+					}
+					if runee == 'K' {
+						b.WCastleK = true
+					}
+					if runee == 'q' {
+						b.BCastleQ = true
+					}
+					if runee == 'k' {
+						b.BCastleK = true
+					}
+				case 3:
+					b.EnPassantTarget = notationToSquare(field)
+				case 4:
+					integer, err := strconv.Atoi(field)
+					if err != nil {
+						fmt.Println(err)
+					}
+					b.HalfMoves = integer
+				case 5:
+					integer, err := strconv.Atoi(field)
+					if err != nil {
+						fmt.Println(err)
+					}
+					b.FullMoves = integer
+				}
 			}
-			continue
 		}
-		if i == 2 || i == 3 {
-			if c == 'Q' {
-				b.WCastleQ = true
-				continue
-			}
-			if c == 'K' {
-				b.WCastleK = true
-				continue
-			}
-		}
-		if i == 4 || i == 5 {
-			if c == 'q' {
-				b.BCastleQ = true
-				continue
-			}
-			if c == 'k' {
-				b.WCastleK = true
-				continue
-			}
-		}
-
-		if i == 6 || i == 7 || i == 8 {
-
-		}
-
 	}
+
+	fmt.Println(b.Turn, b.WCastleQ, b.WCastleK, b.EnPassantTarget, b.HalfMoves, b.FullMoves)
 }
 
 func (b *Board) PieceAt(square int) int {
