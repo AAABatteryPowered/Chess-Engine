@@ -59,9 +59,10 @@ type preCompTables struct {
 }
 
 type Move struct {
-	From   int
-	To     int
-	Castle int
+	From      int
+	To        int
+	Castle    int
+	EnPassant bool
 }
 
 type Bitboard uint64
@@ -117,9 +118,10 @@ func notationToSquare(notation string) int {
 		return -1
 	}
 
-	return int(rank)*8 + int(file)
-}
+	flippedRank := 7 - rank
 
+	return int(flippedRank)*8 + int(file)
+}
 func (b *Board) FromFen(s string) {
 	posPointer := 0
 	var subdata string
@@ -422,6 +424,16 @@ func (b *Board) PlayMove(move Move) {
 			allbb[0].Set(2)
 			allbb[2].Clear(move.To) // white rook
 			allbb[2].Set(3)
+		}
+	}
+	if move.EnPassant {
+		allbb[movingpiece].Clear(move.From)
+		allbb[targetpiece].Clear(move.To)
+		allbb[movingpiece].Set(move.To)
+		if b.Turn {
+			allbb[b.PieceAt(move.To-8)].Clear(move.To - 8)
+		} else {
+			allbb[b.PieceAt(move.To+8)].Clear(move.To + 8)
 		}
 	}
 	if targetpiece > 5 {
@@ -846,13 +858,32 @@ func (b *Board) GenMoves() []Move {
 				}
 
 				leftcapture := ((bb &^ FileH) >> 9) & opponentpieces
+				leftcapturebutforenpassant := ((bb &^ FileH) >> 9)
+				leftcapturebutforenpassantafter := leftcapturebutforenpassant.ToSquares()
+				for _, v := range leftcapturebutforenpassantafter {
+					fmt.Println(v, b.EnPassantTarget)
+					if v == b.EnPassantTarget {
+						Move := Move{From: v + 9, To: v, EnPassant: true}
+						allMoves = append(allMoves, Move)
+					}
+				}
 				after = leftcapture.ToSquares()
 				for _, v := range after {
+
 					Move := Move{From: v + 9, To: v}
 					allMoves = append(allMoves, Move)
 				}
 
 				rightcapture := ((bb &^ FileA) >> 7) & opponentpieces
+				rightcapturebutforenpassant := ((bb &^ FileA) >> 7)
+				rightcapturebutforenpassantafter := rightcapturebutforenpassant.ToSquares()
+				for _, v := range rightcapturebutforenpassantafter {
+
+					if v == b.EnPassantTarget {
+						Move := Move{From: v + 7, To: v, EnPassant: true}
+						allMoves = append(allMoves, Move)
+					}
+				}
 				after = rightcapture.ToSquares()
 				for _, v := range after {
 					Move := Move{From: v + 7, To: v}
