@@ -679,7 +679,7 @@ func RecurringRookDepth(bb *Board, turn bool, moves *[]Move) *[]Move {
 								Move := Move{From: startsquare, To: targetsquare}
 								*recurringrookmoves = append(*recurringrookmoves, Move)
 							} else {
-								fmt.Println(targetsquare)
+								//fmt.Println(targetsquare)
 								savededgeblockeddirs[i] = false
 							}
 						}
@@ -709,7 +709,6 @@ func RecurringBishopDepth(bb *Board, turn bool, moves *[]Move) *[]Move {
 				if savededgeblockeddirs == nil {
 					savededgeblockeddirs = edgeblockeddirs
 				}
-				fmt.Println(moveboards)
 				for ss, v := range edgeblockeddirs {
 					if !v {
 						savededgeblockeddirs[ss] = false
@@ -732,7 +731,6 @@ func RecurringBishopDepth(bb *Board, turn bool, moves *[]Move) *[]Move {
 								Move := Move{From: startsquare, To: targetsquare}
 								*recurringbishopmoves = append(*recurringbishopmoves, Move)
 							} else {
-								fmt.Println(targetsquare)
 								savededgeblockeddirs[i] = false
 							}
 						}
@@ -786,7 +784,7 @@ func RecurringQueenDepth(bb *Board, turn bool, moves *[]Move) *[]Move {
 								Move := Move{From: startsquare, To: targetsquare}
 								*recurringqueenmoves = append(*recurringqueenmoves, Move)
 							} else {
-								fmt.Println(targetsquare)
+								//fmt.Println(targetsquare)
 								savededgeblockeddirs[i] = false
 							}
 						}
@@ -861,7 +859,7 @@ func (b *Board) GenMoves() []Move {
 				leftcapturebutforenpassant := ((bb &^ FileH) >> 9)
 				leftcapturebutforenpassantafter := leftcapturebutforenpassant.ToSquares()
 				for _, v := range leftcapturebutforenpassantafter {
-					fmt.Println(v, b.EnPassantTarget)
+					//fmt.Println(v, b.EnPassantTarget)
 					if v == b.EnPassantTarget {
 						Move := Move{From: v + 9, To: v, EnPassant: true}
 						allMoves = append(allMoves, Move)
