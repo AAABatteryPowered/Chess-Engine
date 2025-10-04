@@ -15,7 +15,7 @@ func movegenTest(b *board.Board, moves []board.Move, depth int) int {
 		*clone = *b
 		clone.PlayMove(mov)
 		clonemoves := clone.Moves()
-		total += movegenTest(b, clonemoves, depth-1)
+		total += movegenTest(clone, clonemoves, depth-1)
 		total += len(clonemoves)
 	}
 
@@ -24,9 +24,12 @@ func movegenTest(b *board.Board, moves []board.Move, depth int) int {
 
 func main() {
 	b := &board.Board{}
-	b.FromFen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
+	b.FromFen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1")
 	b.SetTurn(true)
-	fmt.Println(movegenTest(b, b.GenMoves(), 4))
+	fmt.Println("test")
+
+	fmt.Println(b.Moves())
+	fmt.Println(len(b.Moves()))
 }
 
 //put a super-piece on the square the king is on and if it can attack a piece like a rook or bishop then the king is in check aura farm
