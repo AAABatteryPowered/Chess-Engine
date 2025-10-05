@@ -118,10 +118,9 @@ func notationToSquare(notation string) int {
 		return -1
 	}
 
-	flippedRank := 7 - rank
-
-	return int(flippedRank)*8 + int(file)
+	return int(rank)*8 + int(file)
 }
+
 func (b *Board) FromFen(s string) {
 	posPointer := 0
 	var subdata string
@@ -230,6 +229,16 @@ outerLoop:
 	}
 
 	fmt.Println(b.Turn, b.WCastleQ, b.WCastleK, b.EnPassantTarget, b.HalfMoves, b.FullMoves)
+}
+
+func (b *Board) Copy() *Board {
+	newBoard := &Board{}
+	*newBoard = *b
+
+	// newBoard.pieces = make([]Piece, len(b.pieces))
+	// copy(newBoard.pieces, b.pieces)
+
+	return newBoard
 }
 
 func (b *Board) PieceAt(square int) int {
@@ -414,6 +423,7 @@ func (b *Board) Moves() []Move {
 func (b *Board) PlayMove(move Move) {
 	movingpiece := b.PieceAt(move.From)
 	targetpiece := b.PieceAt(move.To)
+	b.FilledSquares.Clear(movingpiece)
 	castling := move.Castle
 	allbb := b.AllBitboards()
 	if castling != 0 {
@@ -424,21 +434,16 @@ func (b *Board) PlayMove(move Move) {
 			allbb[0].Set(2)
 			allbb[2].Clear(move.To) // white rook
 			allbb[2].Set(3)
-			b.FilledSquares.Set(2)
-			b.FilledSquares.Set(3)
 		}
 	}
 	if move.EnPassant {
-		b.FilledSquares.Clear(move.From)
 		allbb[movingpiece].Clear(move.From)
 		allbb[targetpiece].Clear(move.To)
 		allbb[movingpiece].Set(move.To)
 		if b.Turn {
 			allbb[b.PieceAt(move.To-8)].Clear(move.To - 8)
-			b.FilledSquares.Clear(move.To - 8)
 		} else {
 			allbb[b.PieceAt(move.To+8)].Clear(move.To + 8)
-			b.FilledSquares.Clear(move.To + 8)
 		}
 	}
 	if targetpiece > 5 {
@@ -448,13 +453,11 @@ func (b *Board) PlayMove(move Move) {
 			allbb[movingpiece].Clear(move.From)
 			allbb[targetpiece].Clear(move.To)
 			allbb[movingpiece].Set(move.To)
-			b.FilledSquares.Set(move.To)
 		}
 	} else if targetpiece == -1 {
 		b.FilledSquares.Clear(move.From)
 		allbb[movingpiece].Clear(move.From)
 		allbb[movingpiece].Set(move.To)
-		b.FilledSquares.Set(move.To)
 	} else if targetpiece > -1 && targetpiece < 6 {
 		// piece is white
 		if !b.Turn {
@@ -462,10 +465,8 @@ func (b *Board) PlayMove(move Move) {
 			allbb[movingpiece].Clear(move.From)
 			allbb[targetpiece].Clear(move.To)
 			allbb[movingpiece].Set(move.To)
-			b.FilledSquares.Set(move.To)
 		}
 	}
-	b.Turn = !b.Turn
 }
 
 func RookDepth(startsquare int, depth int) []Bitboard {
@@ -718,6 +719,7 @@ func RecurringBishopDepth(bb *Board, turn bool, moves *[]Move) *[]Move {
 				if savededgeblockeddirs == nil {
 					savededgeblockeddirs = edgeblockeddirs
 				}
+				//fmt.Println(moveboards)
 				for ss, v := range edgeblockeddirs {
 					if !v {
 						savededgeblockeddirs[ss] = false
@@ -740,6 +742,7 @@ func RecurringBishopDepth(bb *Board, turn bool, moves *[]Move) *[]Move {
 								Move := Move{From: startsquare, To: targetsquare}
 								*recurringbishopmoves = append(*recurringbishopmoves, Move)
 							} else {
+								//fmt.Println(targetsquare)
 								savededgeblockeddirs[i] = false
 							}
 						}
@@ -857,7 +860,7 @@ func (b *Board) GenMoves() []Move {
 					Move := Move{From: v + 8, To: v}
 					allMoves = append(allMoves, Move)
 				}
-				push2pawns := ((push1pawns >> 8) &^ b.FilledSquares) & (WPawnStartRank >> 16)
+				push2pawns := ((push1pawns & (WPawnStartRank >> 8)) >> 8) &^ b.FilledSquares
 				after = push2pawns.ToSquares()
 				for _, v := range after {
 					Move := Move{From: v + 16, To: v}
@@ -900,22 +903,18 @@ func (b *Board) GenMoves() []Move {
 		}
 		//castling
 		if b.WCastleQ {
-			if b.WRooks.IsSet(0) && b.WKings.IsSet(4) { // Rook on a1, King on e1
-				if !(b.FilledSquares.IsSet(57) || b.FilledSquares.IsSet(58) || b.FilledSquares.IsSet(59)) {
-					if !(b.IsSquareAttacked(57) || b.IsSquareAttacked(58) || b.IsSquareAttacked(56)) {
-						move := Move{From: 4, To: 2, Castle: 1}
-						allMoves = append(allMoves, move)
-					}
+			if !(b.FilledSquares.IsSet(1) || b.FilledSquares.IsSet(2) || b.FilledSquares.IsSet(3)) {
+				if !(b.IsSquareAttacked(1) || b.IsSquareAttacked(2) || b.IsSquareAttacked(3)) {
+					move := Move{From: 4, To: 2, Castle: 1}
+					allMoves = append(allMoves, move)
 				}
 			}
 		}
 		if b.WCastleK {
-			if b.WRooks.IsSet(7) && b.WKings.IsSet(4) { // Rook on h1, King on e1
-				if !(b.FilledSquares.IsSet(61) || b.FilledSquares.IsSet(62)) {
-					if !(b.IsSquareAttacked(61) || b.IsSquareAttacked(62)) {
-						move := Move{From: 4, To: 6, Castle: 2}
-						allMoves = append(allMoves, move)
-					}
+			if !(b.FilledSquares.IsSet(5) || b.FilledSquares.IsSet(6)) {
+				if !(b.IsSquareAttacked(5) || b.IsSquareAttacked(6)) {
+					move := Move{From: 4, To: 6, Castle: 2}
+					allMoves = append(allMoves, move)
 				}
 			}
 		}

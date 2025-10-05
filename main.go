@@ -5,31 +5,45 @@ import (
 	"fmt"
 )
 
-func movegenTest(b *board.Board, moves []board.Move, depth int) int {
+func Perft(b *board.Board, depth int) uint64 {
 	if depth == 0 {
-		return 0
-	}
-	total := 0
-	for _, mov := range moves {
-		clone := &board.Board{}
-		*clone = *b
-		clone.PlayMove(mov)
-		clonemoves := clone.Moves()
-		total += movegenTest(clone, clonemoves, depth-1)
-		total += len(clonemoves)
+		return 1
 	}
 
-	return total
+	moves := b.Moves()
+
+	if depth == 1 {
+		fmt.Printf("Depth 1: %d moves\n", len(moves))
+		return uint64(len(moves))
+	}
+
+	var nodes uint64
+	for i, move := range moves {
+		newBoard := &board.Board{}
+		*newBoard = *b
+
+		movesBeforePlay := len(newBoard.Moves())
+		newBoard.PlayMove(move)
+		movesAfterPlay := len(newBoard.Moves())
+
+		if depth == 2 {
+			fmt.Printf("Move %d: %d moves before, %d moves after\n",
+				i, movesBeforePlay, movesAfterPlay)
+		}
+
+		nodes += Perft(newBoard, depth-1)
+	}
+
+	return nodes
 }
-
 func main() {
 	b := &board.Board{}
-	b.FromFen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1")
+	b.FromFen("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1 ")
 	b.SetTurn(true)
-	fmt.Println("test")
 
-	fmt.Println(b.Moves())
+	fmt.Println("Running Perft test:")
 	fmt.Println(len(b.Moves()))
+
 }
 
 //put a super-piece on the square the king is on and if it can attack a piece like a rook or bishop then the king is in check aura farm
