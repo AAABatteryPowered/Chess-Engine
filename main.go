@@ -17,20 +17,20 @@ func Perft(b *board.Board, depth int) uint64 {
 	}
 
 	var nodes uint64
-	for i, move := range moves {
+	for _, move := range moves {
 		newBoard := b.Copy()
 
-		if depth == 2 && i < 5 { // Just print first 5 moves
+		/*if depth == 2 && i < 5 { // Just print first 5 moves
 			fmt.Printf("Move %d: From=%d To=%d, Turn before=%v\n",
 				i, move.From, move.To, newBoard.Turn)
-		}
+		}*/
 
 		newBoard.PlayMove(move)
 
-		if depth == 2 && i < 5 {
+		/*if depth == 2 && i < 5 {
 			fmt.Printf("  After move: Turn=%v, Next moves=%d\n",
 				newBoard.Turn, len(newBoard.Moves()))
-		}
+		}*/
 
 		nodes += Perft(newBoard, depth-1)
 	}
@@ -39,11 +39,11 @@ func Perft(b *board.Board, depth int) uint64 {
 }
 func main() {
 	b := &board.Board{}
-	b.FromFen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
+	b.FromFen("rnbqkbnr/pppppppp/8/8/4P3/8/PPPPPPPP/RNBQKBNR b KQkq e3 0 1")
 	b.SetTurn(true)
 
 	fmt.Println("Running Perft test:")
-	fmt.Println(Perft(b, 4))
+	fmt.Println(Perft(b, 3))
 
 }
 
