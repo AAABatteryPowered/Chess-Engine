@@ -128,11 +128,10 @@ func (b *Board) FromFen(s string) {
 	var subdata string
 outerLoop:
 	for xx, ch := range s {
-		if ch >= '0' && ch <= '9' {
+		switch ch {
+		case '1', '2', '3', '4', '5', '6', '7', '8':
 			num := int(ch - '0')
 			posPointer += num
-		}
-		switch ch {
 		case 'K':
 			b.WKings.Set(posPointer)
 			b.FilledSquares.Set(posPointer)
@@ -181,6 +180,7 @@ outerLoop:
 			b.BPawns.Set(posPointer)
 			b.FilledSquares.Set(posPointer)
 			posPointer += 1
+
 		case ' ':
 			subdata = s[xx+1 : len(s)]
 			break outerLoop
@@ -369,13 +369,83 @@ func (b Bitboard) DebugPrint() {
 }*/
 
 func (b *Board) IsSquareAttacked(square int) bool {
-	nextturnboard := *b
-	nextturnboard.SetTurn(!b.Turn)
-	allMoves := nextturnboard.GenMoves()
+	var occ = b.FilledSquares
 
-	for _, move := range allMoves {
-		if move.To == square {
+	if b.Turn {
+		// White to move → check if square is attacked by black
+
+		// Pawn attacks (black → down)
+		if (((b.BPawns>>7)&^FileH)|((b.BPawns>>9)&^FileA))&(1<<square) != 0 {
 			return true
+		}
+
+		// Knight attacks
+		for _, sq := range b.BKnights.ToSquares() {
+			if precomped.Knight[sq].IsSet(square) {
+				return true
+			}
+		}
+
+		// King attacks
+		for _, sq := range b.BKings.ToSquares() {
+			if precomped.King[sq].IsSet(square) {
+				return true
+			}
+		}
+
+		// Sliding pieces
+		for _, sq := range b.BBishops.ToSquares() {
+			if lineAttack(sq, square, occ, []int{7, 9, -7, -9}) {
+				return true
+			}
+		}
+		for _, sq := range b.BRooks.ToSquares() {
+			if lineAttack(sq, square, occ, []int{8, -8, 1, -1}) {
+				return true
+			}
+		}
+		for _, sq := range b.BQueens.ToSquares() {
+			if lineAttack(sq, square, occ, []int{7, 9, -7, -9, 8, -8, 1, -1}) {
+				return true
+			}
+		}
+	} else {
+		// Black to move → check if square is attacked by white
+
+		// Pawn attacks (white → up)
+		if (((b.WPawns<<7)&^FileA)|((b.WPawns<<9)&^FileH))&(1<<square) != 0 {
+			return true
+		}
+
+		// Knight attacks
+		for _, sq := range b.WKnights.ToSquares() {
+			if precomped.Knight[sq].IsSet(square) {
+				return true
+			}
+		}
+
+		// King attacks
+		for _, sq := range b.WKings.ToSquares() {
+			if precomped.King[sq].IsSet(square) {
+				return true
+			}
+		}
+
+		// Sliding pieces
+		for _, sq := range b.WBishops.ToSquares() {
+			if lineAttack(sq, square, occ, []int{7, 9, -7, -9}) {
+				return true
+			}
+		}
+		for _, sq := range b.WRooks.ToSquares() {
+			if lineAttack(sq, square, occ, []int{8, -8, 1, -1}) {
+				return true
+			}
+		}
+		for _, sq := range b.WQueens.ToSquares() {
+			if lineAttack(sq, square, occ, []int{7, 9, -7, -9, 8, -8, 1, -1}) {
+				return true
+			}
 		}
 	}
 
@@ -611,14 +681,17 @@ func (b *Board) PlayMove(move Move) {
 			allbb[move.Promotion+6].Set(move.To)
 		}
 	} else if move.EnPassant {
+		fmt.Println("en passant")
 		b.FilledSquares.Clear(move.To)
 		allbb[movingpiece].Clear(move.From)
-		allbb[targetpiece].Clear(move.To)
+
 		allbb[movingpiece].Set(move.To)
 		if b.Turn {
 			allbb[b.PieceAt(move.To-8)].Clear(move.To - 8)
+			allbb[targetpiece].Clear(move.To + 8)
 		} else {
 			allbb[b.PieceAt(move.To+8)].Clear(move.To + 8)
+			allbb[targetpiece].Clear(move.To - 8)
 		}
 	} else if targetpiece > 5 {
 		// piece is black
@@ -632,6 +705,17 @@ func (b *Board) PlayMove(move Move) {
 		b.FilledSquares.Set(move.To)
 		allbb[movingpiece].Clear(move.From)
 		allbb[movingpiece].Set(move.To)
+
+		b.EnPassantTarget = -1
+		if b.Turn && movingpiece == 5 {
+			if move.From-move.To == 16 {
+				b.EnPassantTarget = move.From - 8
+			}
+		} else if !b.Turn && movingpiece == 11 {
+			if move.To-move.From == 16 {
+				b.EnPassantTarget = move.From + 8
+			}
+		}
 	} else if targetpiece > -1 && targetpiece < 6 {
 		// piece is white
 		if !b.Turn {
@@ -1052,7 +1136,7 @@ func (b *Board) GenMoves() []Move {
 					allMoves = append(allMoves, Move)
 				}
 
-				leftcapture := ((bb &^ FileH) >> 9) & opponentpieces
+				leftcapture := ((bb &^ FileA) >> 9) & opponentpieces
 				after = leftcapture.ToSquares()
 				for _, v := range after {
 					if v <= 7 { // Promotion rank
@@ -1069,7 +1153,7 @@ func (b *Board) GenMoves() []Move {
 				}
 
 				// Right capture with promotions
-				rightcapture := ((bb &^ FileA) >> 7) & opponentpieces
+				rightcapture := ((bb &^ FileH) >> 7) & opponentpieces
 				after = rightcapture.ToSquares()
 				for _, v := range after {
 					if v <= 7 { // Promotion rank
@@ -1084,20 +1168,34 @@ func (b *Board) GenMoves() []Move {
 						allMoves = append(allMoves, Move)
 					}
 				}
+
+				if b.EnPassantTarget != -1 {
+					leftEP := ((bb &^ FileA) >> 9)
+					if leftEP.IsSet(b.EnPassantTarget) {
+						Move := Move{From: b.EnPassantTarget + 9, To: b.EnPassantTarget, EnPassant: true}
+						allMoves = append(allMoves, Move)
+					}
+
+					rightEP := ((bb &^ FileH) >> 7)
+					if rightEP.IsSet(b.EnPassantTarget) {
+						Move := Move{From: b.EnPassantTarget + 7, To: b.EnPassantTarget, EnPassant: true}
+						allMoves = append(allMoves, Move)
+					}
+				}
 			}
 		}
 		//castling
 		if b.WCastleQ {
-			if !(b.FilledSquares.IsSet(1) || b.FilledSquares.IsSet(2) || b.FilledSquares.IsSet(3)) {
-				if !(b.IsSquareAttacked(1) || b.IsSquareAttacked(2) || b.IsSquareAttacked(3)) {
+			if !(b.FilledSquares.IsSet(1) || b.FilledSquares.IsSet(2) || b.FilledSquares.IsSet(3) || b.FilledSquares.IsSet(4)) {
+				if !(b.IsSquareAttacked(1) || b.IsSquareAttacked(2) || b.IsSquareAttacked(3) || b.IsSquareAttacked(4)) {
 					move := Move{From: 4, To: 0, Castle: 1}
 					allMoves = append(allMoves, move)
 				}
 			}
 		}
 		if b.WCastleK {
-			if !(b.FilledSquares.IsSet(5) || b.FilledSquares.IsSet(6)) {
-				if !(b.IsSquareAttacked(5) || b.IsSquareAttacked(6)) {
+			if !(b.FilledSquares.IsSet(4) || b.FilledSquares.IsSet(5) || b.FilledSquares.IsSet(6)) {
+				if !(b.IsSquareAttacked(4) || b.IsSquareAttacked(5) || b.IsSquareAttacked(6)) {
 					move := Move{From: 4, To: 7, Castle: 2}
 					allMoves = append(allMoves, move)
 				}
@@ -1169,6 +1267,7 @@ func (b *Board) GenMoves() []Move {
 					allMoves = append(allMoves, Move)
 				}
 
+				//the files may be the wrong way around like filea should be fileh and vice versa
 				leftcapture := ((bb &^ FileH) << 9) & opponentpieces
 				after = leftcapture.ToSquares()
 				for _, v := range after {
@@ -1201,20 +1300,34 @@ func (b *Board) GenMoves() []Move {
 						allMoves = append(allMoves, Move)
 					}
 				}
+
+				if b.EnPassantTarget != -1 {
+					leftEP := ((bb &^ FileH) << 9)
+					if leftEP.IsSet(b.EnPassantTarget) {
+						Move := Move{From: b.EnPassantTarget - 9, To: b.EnPassantTarget, EnPassant: true}
+						allMoves = append(allMoves, Move)
+					}
+
+					rightEP := ((bb &^ FileA) << 7)
+					if rightEP.IsSet(b.EnPassantTarget) {
+						Move := Move{From: b.EnPassantTarget - 7, To: b.EnPassantTarget, EnPassant: true}
+						allMoves = append(allMoves, Move)
+					}
+				}
 			}
 		}
 		//castling
 		if b.BCastleQ {
-			if !(b.FilledSquares.IsSet(57) || b.FilledSquares.IsSet(58) || b.FilledSquares.IsSet(59)) {
-				if !(b.IsSquareAttacked(57) || b.IsSquareAttacked(58) || b.IsSquareAttacked(59)) {
+			if !(b.FilledSquares.IsSet(56) || b.FilledSquares.IsSet(57) || b.FilledSquares.IsSet(58) || b.FilledSquares.IsSet(59)) {
+				if !(b.IsSquareAttacked(56) || b.IsSquareAttacked(57) || b.IsSquareAttacked(58) || b.IsSquareAttacked(59)) {
 					move := Move{From: 60, To: 56, Castle: 3}
 					allMoves = append(allMoves, move)
 				}
 			}
 		}
 		if b.BCastleK {
-			if !(b.FilledSquares.IsSet(61) || b.FilledSquares.IsSet(62)) {
-				if !(b.IsSquareAttacked(61) || b.IsSquareAttacked(62)) {
+			if !(b.FilledSquares.IsSet(60) || b.FilledSquares.IsSet(61) || b.FilledSquares.IsSet(62)) {
+				if !(b.IsSquareAttacked(60) || b.IsSquareAttacked(61) || b.IsSquareAttacked(62)) {
 					move := Move{From: 60, To: 63, Castle: 4}
 					allMoves = append(allMoves, move)
 				}

@@ -3,6 +3,7 @@ package main
 import (
 	"bot/board"
 	"fmt"
+	"sort"
 )
 
 func Perft(b *board.Board, depth int) uint64 {
@@ -19,32 +20,84 @@ func Perft(b *board.Board, depth int) uint64 {
 	var nodes uint64
 	for _, move := range moves {
 		newBoard := b.Copy()
-
-		/*if depth == 2 && i < 5 { // Just print first 5 moves
-			fmt.Printf("Move %d: From=%d To=%d, Turn before=%v\n",
-				i, move.From, move.To, newBoard.Turn)
-		}*/
-
 		newBoard.PlayMove(move)
-
-		/*if depth == 2 && i < 5 {
-			fmt.Printf("  After move: Turn=%v, Next moves=%d\n",
-				newBoard.Turn, len(newBoard.Moves()))
-		}*/
-
 		nodes += Perft(newBoard, depth-1)
 	}
 
 	return nodes
 }
-func main() {
-	b := &board.Board{}
-	b.FromFen("rnbqkbnr/pppppppp/8/8/4P3/8/PPPPPPPP/RNBQKBNR b KQkq e3 0 1")
-	b.SetTurn(true)
 
-	fmt.Println("Running Perft test:")
-	fmt.Println(Perft(b, 3))
+func PerftDivide(b *board.Board, depth int) uint64 {
+	moves := b.Moves()
+	var totalNodes uint64
 
+	type MoveResult struct {
+		move  board.Move
+		nodes uint64
+		str   string
+	}
+	results := make([]MoveResult, 0, len(moves))
+
+	fmt.Printf("\nPerft Divide (depth %d):\n", depth)
+	fmt.Println("------------------------")
+
+	for _, move := range moves {
+		newBoard := b.Copy()
+		newBoard.PlayMove(move)
+
+		var nodes uint64
+		if depth == 1 {
+			nodes = 1
+		} else {
+			nodes = Perft(newBoard, depth-1)
+		}
+
+		moveStr := MoveToString(move, b)
+		results = append(results, MoveResult{move, nodes, moveStr})
+		totalNodes += nodes
+	}
+
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].str < results[j].str
+	})
+
+	for _, result := range results {
+		fmt.Printf("%s: %d\n", result.str, result.nodes)
+	}
+
+	fmt.Println("------------------------")
+	fmt.Printf("Total: %d\n", totalNodes)
+
+	return totalNodes
 }
 
-//put a super-piece on the square the king is on and if it can attack a piece like a rook or bishop then the king is in check aura farm
+func MoveToString(m board.Move, b *board.Board) string {
+	files := "abcdefgh"
+	ranks := "12345678"
+
+	from := fmt.Sprintf("%c%c", files[m.From%8], ranks[m.From/8])
+	to := fmt.Sprintf("%c%c", files[m.To%8], ranks[m.To/8])
+
+	promotion := ""
+	if m.Promotion != 0 {
+		switch m.Promotion {
+		case 1:
+			promotion = "q"
+		case 2:
+			promotion = "r"
+		case 3:
+			promotion = "b"
+		case 4:
+			promotion = "n"
+		}
+	}
+
+	return from + to + promotion
+}
+
+func main() {
+	b := &board.Board{}
+	b.FromFen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1")
+
+	PerftDivide(b, 4)
+}
