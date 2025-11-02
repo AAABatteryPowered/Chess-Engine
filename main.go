@@ -99,7 +99,12 @@ func main() {
 	b := &board.Board{}
 	b.FromFen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
 
-	fmt.Println(Perft(b, 1))
+	ifsfd := b.WPawns
+	ifsfd.DebugPrint()
+	ifsfd = ifsfd << 8
+	ifsfd.DebugPrint()
+
+	fmt.Println(Perft(b, 3))
 }
 
 /*

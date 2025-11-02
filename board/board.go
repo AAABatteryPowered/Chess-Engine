@@ -592,22 +592,24 @@ func IsKingAttacked(b *Board) (bool, []Move) {
 }*/
 
 func (b *Board) Moves() []Move {
-	incheck := b.IsKingAttacked()
 	ourmoves := b.GenMoves()
 	var filteredmoves []Move
-	if incheck {
-		for _, ourmove := range ourmoves {
-			var copyboard *Board = &Board{}
-			*copyboard = *b
-			copyboard.PlayMove(ourmove)
-			stillincheck := copyboard.IsKingAttacked()
-			if !stillincheck {
-				filteredmoves = append(filteredmoves, ourmove)
-			}
-		}
-		return filteredmoves
+	incheck := b.IsKingAttacked()
+	if !incheck {
+		return ourmoves
 	}
-	return ourmoves
+	originalturn := b.Turn
+	for _, ourmove := range ourmoves {
+		var copyboard *Board = &Board{}
+		*copyboard = *b
+		copyboard.PlayMove(ourmove)
+		copyboard.Turn = originalturn
+		stillincheck := copyboard.IsKingAttacked()
+		if !stillincheck {
+			filteredmoves = append(filteredmoves, ourmove)
+		}
+	}
+	return filteredmoves
 }
 
 /*func (b *Board) Moves() []Move {
@@ -631,6 +633,7 @@ func (b *Board) PlayMove(move Move) {
 	movingpiece := b.PieceAt(move.From)
 	targetpiece := b.PieceAt(move.To)
 	b.FilledSquares.Clear(move.From)
+	b.EnPassantTarget = -1
 	castling := move.Castle
 	allbb := b.AllBitboards()
 	if castling != 0 {
@@ -681,9 +684,6 @@ func (b *Board) PlayMove(move Move) {
 			allbb[move.Promotion+6].Set(move.To)
 		}
 	} else if move.EnPassant && movingpiece != -1 {
-		fmt.Println("en passant")
-		fmt.Println()
-		fmt.Println(move.To)
 		allbb[movingpiece].Clear(move.From)
 		b.FilledSquares.Set(move.To)
 		allbb[movingpiece].Set(move.To)
@@ -714,7 +714,7 @@ func (b *Board) PlayMove(move Move) {
 	} else if targetpiece > 5 {
 		// piece is black
 		if b.Turn {
-			//b.FilledSquares.Clear(move.To)
+			b.FilledSquares.Set(move.To)
 			allbb[movingpiece].Clear(move.From)
 			allbb[targetpiece].Clear(move.To)
 			allbb[movingpiece].Set(move.To)
@@ -724,7 +724,6 @@ func (b *Board) PlayMove(move Move) {
 		allbb[movingpiece].Clear(move.From)
 		allbb[movingpiece].Set(move.To)
 
-		b.EnPassantTarget = -1
 		if b.Turn && movingpiece == 5 {
 			if move.From-move.To == 16 {
 				b.EnPassantTarget = move.From - 8
@@ -737,11 +736,37 @@ func (b *Board) PlayMove(move Move) {
 	} else if targetpiece > -1 && targetpiece < 6 {
 		// piece is white
 		if !b.Turn {
+			b.FilledSquares.Set(move.To)
 			allbb[movingpiece].Clear(move.From)
 			allbb[targetpiece].Clear(move.To)
 			allbb[movingpiece].Set(move.To)
 		}
 	}
+
+	if movingpiece == 0 { // white king moved
+		b.WCastleK = false
+		b.WCastleQ = false
+	} else if movingpiece == 6 { // black king moved
+		b.BCastleK = false
+		b.BCastleQ = false
+	}
+	if movingpiece == 2 || targetpiece == 2 { //white rook move or takne
+		if move.From == 0 || move.To == 0 {
+			b.WCastleQ = false
+		}
+		if move.From == 7 || move.To == 7 {
+			b.WCastleK = false
+		}
+	}
+	if movingpiece == 8 || targetpiece == 8 { //black rook moved or taken
+		if move.From == 56 || move.To == 56 { //it move from square 56 or someone captured square 56
+			b.BCastleQ = false
+		}
+		if move.From == 63 || move.To == 63 {
+			b.BCastleK = false
+		}
+	}
+
 	b.Turn = !b.Turn
 }
 
@@ -1204,7 +1229,7 @@ func (b *Board) GenMoves() []Move {
 		}
 		//castling
 		if b.WCastleQ {
-			if !(b.FilledSquares.IsSet(1) || b.FilledSquares.IsSet(2) || b.FilledSquares.IsSet(3)) && (b.WKings.IsSet(4) && b.WRooks.IsSet(0)) {
+			if !(b.FilledSquares.IsSet(1) || b.FilledSquares.IsSet(2) || b.FilledSquares.IsSet(3)) && (b.WKings.IsSet(56) && b.WRooks.IsSet(60)) {
 				if !(b.IsSquareAttacked(1) || b.IsSquareAttacked(2) || b.IsSquareAttacked(3) || b.IsSquareAttacked(4)) {
 					move := Move{From: 4, To: 0, Castle: 1}
 					allMoves = append(allMoves, move)
