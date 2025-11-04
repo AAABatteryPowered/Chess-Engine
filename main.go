@@ -101,10 +101,8 @@ func main() {
 
 	ifsfd := b.WPawns
 	ifsfd.DebugPrint()
-	ifsfd = ifsfd << 8
-	ifsfd.DebugPrint()
 
-	fmt.Println(Perft(b, 3))
+	PerftDivide(b, 5)
 }
 
 /*

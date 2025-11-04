@@ -460,10 +460,25 @@ func lineAttack(from, to int, occ Bitboard, dirs []int) bool {
 			if sq < 0 || sq > 63 {
 				break
 			}
-			// Prevent rank wrap for horizontal moves
-			if (dir == 1 || dir == -1) && abs((sq%8)-((sq-dir)%8)) != 1 {
-				break
+
+			fromFile := (sq - dir) % 8
+			toFile := sq % 8
+
+			// Prevent wrapping
+			if dir == 1 || dir == -1 {
+				if abs(toFile-fromFile) != 1 {
+					break
+				}
+			} else if dir == 7 || dir == -7 {
+				if abs(toFile-fromFile) != 1 {
+					break
+				}
+			} else if dir == 9 || dir == -9 {
+				if abs(toFile-fromFile) != 1 {
+					break
+				}
 			}
+
 			if sq == to {
 				return true
 			}
@@ -594,10 +609,10 @@ func IsKingAttacked(b *Board) (bool, []Move) {
 func (b *Board) Moves() []Move {
 	ourmoves := b.GenMoves()
 	var filteredmoves []Move
-	incheck := b.IsKingAttacked()
+	/*incheck := b.IsKingAttacked()
 	if !incheck {
 		return ourmoves
-	}
+	}*/
 	originalturn := b.Turn
 	for _, ourmove := range ourmoves {
 		var copyboard *Board = &Board{}
@@ -607,6 +622,8 @@ func (b *Board) Moves() []Move {
 		stillincheck := copyboard.IsKingAttacked()
 		if !stillincheck {
 			filteredmoves = append(filteredmoves, ourmove)
+		} else {
+			fmt.Println(ourmove)
 		}
 	}
 	return filteredmoves
@@ -689,27 +706,28 @@ func (b *Board) PlayMove(move Move) {
 		allbb[movingpiece].Set(move.To)
 
 		if b.Turn {
-			if b.PieceAt(move.To-8) != -1 {
-				allbb[b.PieceAt(move.To-8)].Clear(move.To - 8)
-			} else {
-				fmt.Println("chat theres no pawn here")
-			}
-			if targetpiece != -1 {
-				allbb[targetpiece].Clear(move.To - 8)
-			}
-
-			b.FilledSquares.Clear(move.To - 8)
-		} else {
-			if b.PieceAt(move.To+8) != -1 {
-				allbb[b.PieceAt(move.To+8)].Clear(move.To + 8)
-			} else {
-				fmt.Println("chat theres no pawn here")
-			}
-			if targetpiece != -1 {
-
-				allbb[targetpiece].Clear(move.To + 8)
-			}
 			b.FilledSquares.Clear(move.To + 8)
+			allbb[11].Clear(move.To + 8)
+			if b.PieceAt(move.To) != -1 {
+				allbb[b.PieceAt(move.To)].Clear(move.To)
+			} else {
+				fmt.Println("chat theres no pawn here")
+			}
+			if targetpiece != -1 {
+				allbb[targetpiece].Clear(move.To)
+			}
+		} else {
+			b.FilledSquares.Clear(move.To - 8)
+			allbb[5].Clear(move.To - 8)
+			if b.PieceAt(move.To) != -1 {
+				allbb[b.PieceAt(move.To)].Clear(move.To)
+			} else {
+				fmt.Println("chat theres no pawn here")
+			}
+			if targetpiece != -1 {
+
+				allbb[targetpiece].Clear(move.To)
+			}
 		}
 	} else if targetpiece > 5 {
 		// piece is black
@@ -1229,17 +1247,17 @@ func (b *Board) GenMoves() []Move {
 		}
 		//castling
 		if b.WCastleQ {
-			if !(b.FilledSquares.IsSet(1) || b.FilledSquares.IsSet(2) || b.FilledSquares.IsSet(3)) && (b.WKings.IsSet(56) && b.WRooks.IsSet(60)) {
-				if !(b.IsSquareAttacked(1) || b.IsSquareAttacked(2) || b.IsSquareAttacked(3) || b.IsSquareAttacked(4)) {
+			if !(b.FilledSquares.IsSet(58) || b.FilledSquares.IsSet(59) && (b.WKings.IsSet(60) && b.WRooks.IsSet(56))) {
+				if !(b.IsSquareAttacked(58) || b.IsSquareAttacked(59) || b.IsSquareAttacked(60)) {
 					move := Move{From: 4, To: 0, Castle: 1}
 					allMoves = append(allMoves, move)
 				}
 			}
 		}
 		if b.WCastleK {
-			if !(b.FilledSquares.IsSet(5) || b.FilledSquares.IsSet(6)) && (b.WKings.IsSet(4) && b.WRooks.IsSet(7)) {
-				if !(b.IsSquareAttacked(4) || b.IsSquareAttacked(5) || b.IsSquareAttacked(6)) {
-					move := Move{From: 4, To: 7, Castle: 2}
+			if !(b.FilledSquares.IsSet(61) || b.FilledSquares.IsSet(62)) && (b.WKings.IsSet(60) && b.WRooks.IsSet(63)) {
+				if !(b.IsSquareAttacked(61) || b.IsSquareAttacked(62) || b.IsSquareAttacked(60)) {
+					move := Move{From: 60, To: 63, Castle: 2}
 					allMoves = append(allMoves, move)
 				}
 			}
@@ -1361,17 +1379,17 @@ func (b *Board) GenMoves() []Move {
 		}
 		//castling
 		if b.BCastleQ {
-			if !(b.FilledSquares.IsSet(57) || b.FilledSquares.IsSet(58) || b.FilledSquares.IsSet(59)) && (b.BKings.IsSet(60) && b.BRooks.IsSet(56)) {
-				if !(b.IsSquareAttacked(57) || b.IsSquareAttacked(58) || b.IsSquareAttacked(59) || b.IsSquareAttacked(60)) {
-					move := Move{From: 60, To: 56, Castle: 3}
+			if !(b.FilledSquares.IsSet(2) || b.FilledSquares.IsSet(3)) && (b.BKings.IsSet(4) && b.BRooks.IsSet(0)) {
+				if !(b.IsSquareAttacked(2) || b.IsSquareAttacked(3) || b.IsSquareAttacked(4)) {
+					move := Move{From: 4, To: 0, Castle: 3}
 					allMoves = append(allMoves, move)
 				}
 			}
 		}
 		if b.BCastleK {
-			if !(b.FilledSquares.IsSet(61) || b.FilledSquares.IsSet(62)) && (b.BKings.IsSet(60) && b.BRooks.IsSet(63)) {
-				if !(b.IsSquareAttacked(60) || b.IsSquareAttacked(61) || b.IsSquareAttacked(62)) {
-					move := Move{From: 60, To: 63, Castle: 4}
+			if !(b.FilledSquares.IsSet(5) || b.FilledSquares.IsSet(6)) && (b.BKings.IsSet(4) && b.BRooks.IsSet(7)) {
+				if !(b.IsSquareAttacked(5) || b.IsSquareAttacked(6) || b.IsSquareAttacked(4)) {
+					move := Move{From: 4, To: 7, Castle: 4}
 					allMoves = append(allMoves, move)
 				}
 			}
