@@ -623,7 +623,7 @@ func (b *Board) Moves() []Move {
 		if !stillincheck {
 			filteredmoves = append(filteredmoves, ourmove)
 		} else {
-			fmt.Println(ourmove)
+			//fmt.Println(ourmove)
 		}
 	}
 	return filteredmoves
@@ -661,33 +661,33 @@ func (b *Board) PlayMove(move Move) {
 			b.FilledSquares.Set(2)
 			b.FilledSquares.Set(3)
 			allbb[0].Clear(move.From) // white king
-			allbb[0].Set(2)
+			allbb[0].Set(58)
 			allbb[2].Clear(move.To) // white rook
-			allbb[2].Set(3)
+			allbb[2].Set(59)
 		case 2:
-			b.FilledSquares.Clear(move.To)
-			b.FilledSquares.Set(6)
-			b.FilledSquares.Set(5)
-			allbb[0].Clear(move.From) // white king
-			allbb[0].Set(6)
-			allbb[2].Clear(move.To) // white rook
-			allbb[2].Set(5)
-		case 3:
-			b.FilledSquares.Clear(move.To)
-			b.FilledSquares.Set(58)
-			b.FilledSquares.Set(59)
-			allbb[6].Clear(move.From)
-			allbb[6].Set(58)
-			allbb[8].Clear(move.To)
-			allbb[8].Set(59)
-		case 4:
 			b.FilledSquares.Clear(move.To)
 			b.FilledSquares.Set(61)
 			b.FilledSquares.Set(62)
+			allbb[0].Clear(move.From) // white king
+			allbb[0].Set(62)
+			allbb[2].Clear(move.To) // white rook
+			allbb[2].Set(61)
+		case 3:
+			b.FilledSquares.Clear(move.To)
+			b.FilledSquares.Set(2)
+			b.FilledSquares.Set(3)
 			allbb[6].Clear(move.From)
-			allbb[6].Set(62)
+			allbb[6].Set(2)
 			allbb[8].Clear(move.To)
-			allbb[8].Set(61)
+			allbb[8].Set(3)
+		case 4:
+			b.FilledSquares.Clear(move.To)
+			b.FilledSquares.Set(5)
+			b.FilledSquares.Set(6)
+			allbb[6].Clear(move.From)
+			allbb[6].Set(6)
+			allbb[8].Clear(move.To)
+			allbb[8].Set(5)
 		}
 	} else if move.Promotion != 0 {
 		b.FilledSquares.Set(move.To)
@@ -703,31 +703,17 @@ func (b *Board) PlayMove(move Move) {
 	} else if move.EnPassant && movingpiece != -1 {
 		allbb[movingpiece].Clear(move.From)
 		b.FilledSquares.Set(move.To)
+		if targetpiece != -1 {
+			allbb[targetpiece].Clear(move.To)
+		}
 		allbb[movingpiece].Set(move.To)
 
 		if b.Turn {
 			b.FilledSquares.Clear(move.To + 8)
 			allbb[11].Clear(move.To + 8)
-			if b.PieceAt(move.To) != -1 {
-				allbb[b.PieceAt(move.To)].Clear(move.To)
-			} else {
-				fmt.Println("chat theres no pawn here")
-			}
-			if targetpiece != -1 {
-				allbb[targetpiece].Clear(move.To)
-			}
 		} else {
 			b.FilledSquares.Clear(move.To - 8)
 			allbb[5].Clear(move.To - 8)
-			if b.PieceAt(move.To) != -1 {
-				allbb[b.PieceAt(move.To)].Clear(move.To)
-			} else {
-				fmt.Println("chat theres no pawn here")
-			}
-			if targetpiece != -1 {
-
-				allbb[targetpiece].Clear(move.To)
-			}
 		}
 	} else if targetpiece > 5 {
 		// piece is black
@@ -1213,7 +1199,6 @@ func (b *Board) GenMoves() []Move {
 					}
 				}
 
-				// Right capture with promotions
 				rightcapture := ((bb &^ FileH) >> 7) & opponentpieces
 				after = rightcapture.ToSquares()
 				for _, v := range after {
@@ -1247,9 +1232,9 @@ func (b *Board) GenMoves() []Move {
 		}
 		//castling
 		if b.WCastleQ {
-			if !(b.FilledSquares.IsSet(58) || b.FilledSquares.IsSet(59) && (b.WKings.IsSet(60) && b.WRooks.IsSet(56))) {
+			if !(b.FilledSquares.IsSet(57) || b.FilledSquares.IsSet(58) || b.FilledSquares.IsSet(59)) && (b.WKings.IsSet(60) && b.WRooks.IsSet(56)) {
 				if !(b.IsSquareAttacked(58) || b.IsSquareAttacked(59) || b.IsSquareAttacked(60)) {
-					move := Move{From: 4, To: 0, Castle: 1}
+					move := Move{From: 60, To: 56, Castle: 1}
 					allMoves = append(allMoves, move)
 				}
 			}
@@ -1345,7 +1330,6 @@ func (b *Board) GenMoves() []Move {
 					}
 				}
 
-				// Right capture with promotions
 				rightcapture := ((bb &^ FileA) << 7) & opponentpieces
 				after = rightcapture.ToSquares()
 				for _, v := range after {
@@ -1379,7 +1363,7 @@ func (b *Board) GenMoves() []Move {
 		}
 		//castling
 		if b.BCastleQ {
-			if !(b.FilledSquares.IsSet(2) || b.FilledSquares.IsSet(3)) && (b.BKings.IsSet(4) && b.BRooks.IsSet(0)) {
+			if !(b.FilledSquares.IsSet(1) || b.FilledSquares.IsSet(2) || b.FilledSquares.IsSet(3)) && (b.BKings.IsSet(4) && b.BRooks.IsSet(0)) {
 				if !(b.IsSquareAttacked(2) || b.IsSquareAttacked(3) || b.IsSquareAttacked(4)) {
 					move := Move{From: 4, To: 0, Castle: 3}
 					allMoves = append(allMoves, move)
