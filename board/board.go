@@ -18,6 +18,19 @@ const (
 	BPawnStartRank Bitboard = 0x000000000000FF00
 )
 
+type Undo struct {
+	from, to      int
+	movingPiece   int
+	capturedPiece int
+	promotion     int
+	enPassantOld  int
+	wCastleKOld   bool
+	wCastleQOld   bool
+	bCastleKOld   bool
+	bCastleQOld   bool
+	turnOld       bool
+}
+
 type BoardMethods interface {
 	FromFen(string)
 	GenMoves() []Move
@@ -334,7 +347,7 @@ func (b *Board) DebugPrint() {
 }
 
 func (b Bitboard) DebugPrint() {
-	for rank := 0; rank < 8; rank++ {
+	for rank := 7; rank >= 0; rank-- {
 		for file := 0; file < 8; file++ {
 			square := rank*8 + file
 			if (b>>square)&1 == 1 {
@@ -375,7 +388,7 @@ func (b *Board) IsSquareAttacked(square int) bool {
 		// White to move → check if square is attacked by black
 
 		// Pawn attacks (black → down)
-		if (((b.BPawns>>7)&^FileH)|((b.BPawns>>9)&^FileA))&(1<<square) != 0 {
+		if (((b.BPawns<<7)&^FileH)|((b.BPawns<<9)&^FileA))&(1<<square) != 0 {
 			return true
 		}
 
@@ -413,7 +426,7 @@ func (b *Board) IsSquareAttacked(square int) bool {
 		// Black to move → check if square is attacked by white
 
 		// Pawn attacks (white → up)
-		if (((b.WPawns<<7)&^FileA)|((b.WPawns<<9)&^FileH))&(1<<square) != 0 {
+		if (((b.WPawns>>7)&^FileA)|((b.WPawns>>9)&^FileH))&(1<<square) != 0 {
 			return true
 		}
 
@@ -507,7 +520,7 @@ func (b *Board) IsKingAttacked() bool {
 		kingSq = bits.TrailingZeros64(uint64(b.WKings))
 
 		// Pawn attacks (black → down)
-		attackers |= (((b.BPawns >> 7) &^ FileH) | ((b.BPawns >> 9) &^ FileA)) & (1 << kingSq)
+		attackers |= (((b.BPawns << 7) &^ FileH) | ((b.BPawns << 9) &^ FileA)) & (1 << kingSq)
 
 		// Knight attacks
 		for _, sq := range b.BKnights.ToSquares() {
@@ -544,7 +557,7 @@ func (b *Board) IsKingAttacked() bool {
 		kingSq = bits.TrailingZeros64(uint64(b.BKings))
 
 		// Pawn attacks (white → up)
-		attackers |= (((b.WPawns << 7) &^ FileA) | ((b.WPawns << 9) &^ FileH)) & (1 << kingSq)
+		attackers |= (((b.WPawns >> 7) &^ FileA) | ((b.WPawns >> 9) &^ FileH)) & (1 << kingSq)
 
 		// Knight attacks
 		for _, sq := range b.WKnights.ToSquares() {
@@ -646,7 +659,21 @@ func (b *Board) Moves() []Move {
 	return filteredmoves
 }*/
 
-func (b *Board) PlayMove(move Move) {
+func (b *Board) PlayMove(move Move) Undo {
+	undo := Undo{
+		from:          move.From,
+		to:            move.To,
+		movingPiece:   b.PieceAt(move.From),
+		capturedPiece: b.PieceAt(move.To),
+		promotion:     move.Promotion,
+		enPassantOld:  b.EnPassantTarget,
+		wCastleKOld:   b.WCastleK,
+		wCastleQOld:   b.WCastleQ,
+		bCastleKOld:   b.BCastleK,
+		bCastleQOld:   b.BCastleQ,
+		turnOld:       b.Turn,
+	}
+
 	movingpiece := b.PieceAt(move.From)
 	targetpiece := b.PieceAt(move.To)
 	b.FilledSquares.Clear(move.From)
@@ -658,8 +685,8 @@ func (b *Board) PlayMove(move Move) {
 		case 1:
 			//no clear move.froms cuz we do that 6 lines above
 			b.FilledSquares.Clear(move.To)
-			b.FilledSquares.Set(2)
-			b.FilledSquares.Set(3)
+			b.FilledSquares.Set(58)
+			b.FilledSquares.Set(59)
 			allbb[0].Clear(move.From) // white king
 			allbb[0].Set(58)
 			allbb[2].Clear(move.To) // white rook
@@ -772,6 +799,109 @@ func (b *Board) PlayMove(move Move) {
 	}
 
 	b.Turn = !b.Turn
+
+	return undo
+}
+
+func (b *Board) UndoMove(move Move, u Undo) {
+
+	allbb := b.AllBitboards()
+
+	// restore turn
+	b.Turn = u.turnOld
+
+	// restore castling
+	b.WCastleK = u.wCastleKOld
+	b.WCastleQ = u.wCastleQOld
+	b.BCastleK = u.bCastleKOld
+	b.BCastleQ = u.bCastleQOld
+
+	// restore EP target
+	b.EnPassantTarget = u.enPassantOld
+
+	// clear destination
+	b.FilledSquares.Clear(u.to)
+
+	// remove moved piece from destination
+	allbb[u.movingPiece].Clear(u.to)
+
+	// restore piece on destination if captured
+	if u.capturedPiece != -1 {
+		allbb[u.capturedPiece].Set(u.to)
+		b.FilledSquares.Set(u.to)
+	}
+
+	// restore original square
+	allbb[u.movingPiece].Set(u.from)
+	b.FilledSquares.Set(u.from)
+
+	// handle promotions
+	if u.promotion != 0 {
+		// remove promoted piece
+		promotedIndex := u.promotion
+		if !u.turnOld {
+			promotedIndex += 6
+		}
+
+		allbb[promotedIndex].Clear(u.to)
+
+		// restore pawn
+		allbb[u.movingPiece].Set(u.from)
+	}
+
+	// handle en-passant capture
+	if move.EnPassant {
+		if u.turnOld { // white moved
+			allbb[11].Set(u.to + 8)
+			b.FilledSquares.Set(u.to + 8)
+		} else { // black moved
+			allbb[5].Set(u.to - 8)
+			b.FilledSquares.Set(u.to - 8)
+		}
+	}
+
+	// handle castling
+	switch move.Castle {
+	case 1: // white O-O-O
+		allbb[0].Clear(58)
+		allbb[2].Clear(59)
+		allbb[0].Set(60)
+		allbb[2].Set(56)
+		b.FilledSquares.Clear(58)
+		b.FilledSquares.Clear(59)
+		b.FilledSquares.Set(60)
+		b.FilledSquares.Set(56)
+
+	case 2: // white O-O
+		allbb[0].Clear(62)
+		allbb[2].Clear(61)
+		allbb[0].Set(60)
+		allbb[2].Set(63)
+		b.FilledSquares.Clear(62)
+		b.FilledSquares.Clear(61)
+		b.FilledSquares.Set(60)
+		b.FilledSquares.Set(63)
+
+	case 3: // black O-O-O
+		allbb[6].Clear(2)
+		allbb[8].Clear(3)
+		allbb[6].Set(4)
+		allbb[8].Set(0)
+		b.FilledSquares.Clear(2)
+		b.FilledSquares.Clear(3)
+		b.FilledSquares.Set(4)
+		b.FilledSquares.Set(0)
+
+	case 4: // black O-O
+		allbb[6].Clear(6)
+		allbb[8].Clear(5)
+		allbb[6].Set(4)
+		allbb[8].Set(7)
+		b.FilledSquares.Clear(6)
+		b.FilledSquares.Clear(5)
+		b.FilledSquares.Set(4)
+		b.FilledSquares.Set(7)
+	}
 }
 
 func RookDepth(startsquare int, depth int) []Bitboard {
@@ -1233,7 +1363,7 @@ func (b *Board) GenMoves() []Move {
 		//castling
 		if b.WCastleQ {
 			if !(b.FilledSquares.IsSet(57) || b.FilledSquares.IsSet(58) || b.FilledSquares.IsSet(59)) && (b.WKings.IsSet(60) && b.WRooks.IsSet(56)) {
-				if !(b.IsSquareAttacked(58) || b.IsSquareAttacked(59) || b.IsSquareAttacked(60)) {
+				if !(b.IsSquareAttacked(57) || b.IsSquareAttacked(58) || b.IsSquareAttacked(59) || b.IsSquareAttacked(60)) {
 					move := Move{From: 60, To: 56, Castle: 1}
 					allMoves = append(allMoves, move)
 				}
@@ -1364,7 +1494,7 @@ func (b *Board) GenMoves() []Move {
 		//castling
 		if b.BCastleQ {
 			if !(b.FilledSquares.IsSet(1) || b.FilledSquares.IsSet(2) || b.FilledSquares.IsSet(3)) && (b.BKings.IsSet(4) && b.BRooks.IsSet(0)) {
-				if !(b.IsSquareAttacked(2) || b.IsSquareAttacked(3) || b.IsSquareAttacked(4)) {
+				if !(b.IsSquareAttacked(1) || b.IsSquareAttacked(2) || b.IsSquareAttacked(3) || b.IsSquareAttacked(4)) {
 					move := Move{From: 4, To: 0, Castle: 3}
 					allMoves = append(allMoves, move)
 				}

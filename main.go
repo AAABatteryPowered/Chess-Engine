@@ -42,15 +42,17 @@ func PerftDivide(b *board.Board, depth int) uint64 {
 	fmt.Println("------------------------")
 
 	for _, move := range moves {
-		newBoard := b.Copy()
-		newBoard.PlayMove(move)
+		//newBoard := b.Copy()
+		undo := b.PlayMove(move)
 
 		var nodes uint64
 		if depth == 1 {
 			nodes = 1
 		} else {
-			nodes = Perft(newBoard, depth-1)
+			nodes = Perft(b, depth-1)
 		}
+
+		b.UndoMove(move, undo)
 
 		moveStr := MoveToString(move, b)
 		results = append(results, MoveResult{move, nodes, moveStr})
@@ -97,12 +99,11 @@ func MoveToString(m board.Move, b *board.Board) string {
 
 func main() {
 	b := &board.Board{}
-	b.FromFen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1")
+	b.FromFen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
 
-	ifsfd := b.WPawns
-	ifsfd.DebugPrint()
+	PerftDivide(b, 5)
 
-	PerftDivide(b, 2)
+	(b.BPawns << 8).DebugPrint()
 }
 
 /*
