@@ -2,8 +2,10 @@ package main
 
 import (
 	"bot/board"
+	"bot/moves"
 	"fmt"
 	"sort"
+	"time"
 )
 
 func Perft(b *board.Board, depth int) uint64 {
@@ -14,35 +16,34 @@ func Perft(b *board.Board, depth int) uint64 {
 	moves := b.Moves()
 
 	if depth == 1 {
-		return uint64(len(moves))
+		return uint64(len(moves.Moves))
 	}
 
 	var nodes uint64
-	for _, move := range moves {
-		newBoard := b.Copy()
-		newBoard.PlayMove(move)
-		nodes += Perft(newBoard, depth-1)
+	for _, move := range moves.Moves {
+		undo := b.PlayMove(move)
+		nodes += Perft(b, depth-1)
+		b.UndoMove(move, undo)
 	}
 
 	return nodes
 }
 
 func PerftDivide(b *board.Board, depth int) uint64 {
-	moves := b.Moves()
+	Moves := b.Moves()
 	var totalNodes uint64
 
 	type MoveResult struct {
-		move  board.Move
+		move  moves.Move
 		nodes uint64
 		str   string
 	}
-	results := make([]MoveResult, 0, len(moves))
+	results := make([]MoveResult, 0, len(Moves.Moves))
 
 	fmt.Printf("\nPerft Divide (depth %d):\n", depth)
 	fmt.Println("------------------------")
 
-	for _, move := range moves {
-		//newBoard := b.Copy()
+	for _, move := range Moves.Moves {
 		undo := b.PlayMove(move)
 
 		var nodes uint64
@@ -73,16 +74,16 @@ func PerftDivide(b *board.Board, depth int) uint64 {
 	return totalNodes
 }
 
-func MoveToString(m board.Move, b *board.Board) string {
+func MoveToString(m moves.Move, b *board.Board) string {
 	files := "abcdefgh"
 	ranks := "12345678"
 
-	from := fmt.Sprintf("%c%c", files[m.From%8], ranks[m.From/8])
-	to := fmt.Sprintf("%c%c", files[m.To%8], ranks[m.To/8])
+	from := fmt.Sprintf("%c%c", files[m.From()%8], ranks[m.From()/8])
+	to := fmt.Sprintf("%c%c", files[m.To()%8], ranks[m.To()/8])
 
 	promotion := ""
-	if m.Promotion != 0 {
-		switch m.Promotion {
+	if m.IsPromotion() {
+		switch m.PromotionPiece() {
 		case 1:
 			promotion = "q"
 		case 2:
@@ -97,16 +98,20 @@ func MoveToString(m board.Move, b *board.Board) string {
 	return from + to + promotion
 }
 
+func timer(name string) func() {
+	start := time.Now()
+	return func() {
+		fmt.Printf("%s took %v\n", name, time.Since(start))
+	}
+}
+
 func main() {
+	defer timer("main")()
 	b := &board.Board{}
 	b.FromFen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
 
-	PerftDivide(b, 5)
+	fmt.Println(Perft(b, 5))
 
-	(b.BPawns << 8).DebugPrint()
+	board.GenerateMovementMasks()
+	board.BishopMovementMasks[28].DebugPrint()
 }
-
-/*
-CASTLING WORKS EVEN WITHOUT A KING AND ROOK
-CASTLING WORKS EVEN WITHOUT A KING AND ROOKCASTLING WORKS EVEN WITHOUT A KING AND ROOKCASTLING WORKS EVEN WITHOUT A KING AND ROOKCASTLING WORKS EVEN WITHOUT A KING AND ROOKCASTLING WORKS EVEN WITHOUT A KING AND ROOKCASTLING WORKS EVEN WITHOUT A KING AND ROOKCASTLING WORKS EVEN WITHOUT A KING AND ROOKCASTLING WORKS EVEN WITHOUT A KING AND ROOKCASTLING WORKS EVEN WITHOUT A KING AND ROOKCASTLING WORKS EVEN WITHOUT A KING AND ROOKCASTLING WORKS EVEN WITHOUT A KING AND ROOKCASTLING WORKS EVEN WITHOUT A KING AND ROOKCASTLING WORKS EVEN WITHOUT A KING AND ROOK
-*/
