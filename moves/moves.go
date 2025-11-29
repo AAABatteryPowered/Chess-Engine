@@ -1,11 +1,10 @@
 package moves
 
-import "slices"
-
 type Move uint16
 
 type MoveList struct {
-	Moves []Move
+	Moves [218]Move
+	Count int
 }
 
 /*
@@ -29,6 +28,12 @@ const (
 
 func NewMove(from, to int, flags Move) Move {
 	return Move(from) | Move(to)<<6 | flags
+}
+
+func NewMoveList() MoveList {
+	return MoveList{
+		Count: 0,
+	}
 }
 
 func (m Move) From() int {
@@ -65,9 +70,11 @@ func (m Move) PromotionPiece() int {
 }
 
 func (ml *MoveList) Add(move Move) {
-	ml.Moves = append(ml.Moves, move)
+	ml.Moves[ml.Count] = move
+	ml.Count++
 }
 
 func (ml *MoveList) Combine(other *MoveList) {
-	ml.Moves = slices.Concat(ml.Moves, other.Moves)
+	copy(ml.Moves[ml.Count:], other.Moves[:other.Count])
+	ml.Count += other.Count
 }

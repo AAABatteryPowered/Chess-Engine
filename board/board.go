@@ -266,13 +266,17 @@ func (b *Board) PieceAt(square int) int {
 }
 
 func (b Bitboard) ToSquares() []int {
-	var squares []int
 	bb := uint64(b)
+	count := bits.OnesCount64(bb)
+
+	squares := make([]int, 0, count)
+
 	for bb != 0 {
-		square := bits.TrailingZeros64(bb)
-		squares = append(squares, square)
+		sq := bits.TrailingZeros64(bb)
+		squares = append(squares, sq)
 		bb &= bb - 1
 	}
+
 	return squares
 }
 
@@ -381,124 +385,77 @@ func (b Bitboard) DebugPrint() {
 }*/
 
 func (b *Board) IsSquareAttacked(square int) bool {
-	var occ = b.FilledSquares
+	occ := b.FilledSquares
+	squareBit := Bitboard(1 << square)
 
 	if b.Turn {
 		// White to move → check if square is attacked by black
 
-		// Pawn attacks (black → down)
-		if (((b.BPawns<<7)&^FileH)|((b.BPawns<<9)&^FileA))&(1<<square) != 0 {
+		// Pawn attacks (black pawns move down, attack diagonally down)
+		if (((b.BPawns<<7)&^FileH)|((b.BPawns<<9)&^FileA))&squareBit != 0 {
 			return true
 		}
 
 		// Knight attacks
-		for _, sq := range b.BKnights.ToSquares() {
-			if precomped.Knight[sq].IsSet(square) {
-				return true
-			}
+		if precomped.Knight[square]&b.BKnights != 0 {
+			return true
 		}
 
 		// King attacks
-		for _, sq := range b.BKings.ToSquares() {
-			if precomped.King[sq].IsSet(square) {
-				return true
-			}
+		if precomped.King[square]&b.BKings != 0 {
+			return true
 		}
 
-		// Sliding pieces
-		for _, sq := range b.BBishops.ToSquares() {
-			if lineAttack(sq, square, occ, []int{7, 9, -7, -9}) {
-				return true
-			}
+		// Rook/Queen attacks using magic bitboards
+		rookMagic := rookMagics[square]
+		rookHash := uint64(occ&rookMagic.Mask) * rookMagic.Magic
+		rookIndex := (rookHash >> rookMagic.Shift) + uint64(rookMagic.Offset)
+		if rookAttacks[rookIndex]&(b.BRooks|b.BQueens) != 0 {
+			return true
 		}
-		for _, sq := range b.BRooks.ToSquares() {
-			if lineAttack(sq, square, occ, []int{8, -8, 1, -1}) {
-				return true
-			}
-		}
-		for _, sq := range b.BQueens.ToSquares() {
-			if lineAttack(sq, square, occ, []int{7, 9, -7, -9, 8, -8, 1, -1}) {
-				return true
-			}
+
+		// Bishop/Queen attacks using magic bitboards
+		bishopMagic := bishopMagics[square]
+		bishopHash := uint64(occ&bishopMagic.Mask) * bishopMagic.Magic
+		bishopIndex := (bishopHash >> bishopMagic.Shift) + uint64(bishopMagic.Offset)
+		if bishopAttacks[bishopIndex]&(b.BBishops|b.BQueens) != 0 {
+			return true
 		}
 	} else {
 		// Black to move → check if square is attacked by white
 
-		// Pawn attacks (white → up)
-		if (((b.WPawns>>7)&^FileA)|((b.WPawns>>9)&^FileH))&(1<<square) != 0 {
+		// Pawn attacks (white pawns move up, attack diagonally up)
+		if (((b.WPawns>>7)&^FileA)|((b.WPawns>>9)&^FileH))&squareBit != 0 {
 			return true
 		}
 
 		// Knight attacks
-		for _, sq := range b.WKnights.ToSquares() {
-			if precomped.Knight[sq].IsSet(square) {
-				return true
-			}
+		if precomped.Knight[square]&b.WKnights != 0 {
+			return true
 		}
 
 		// King attacks
-		for _, sq := range b.WKings.ToSquares() {
-			if precomped.King[sq].IsSet(square) {
-				return true
-			}
+		if precomped.King[square]&b.WKings != 0 {
+			return true
 		}
 
-		// Sliding pieces
-		for _, sq := range b.WBishops.ToSquares() {
-			if lineAttack(sq, square, occ, []int{7, 9, -7, -9}) {
-				return true
-			}
+		// Rook/Queen attacks using magic bitboards
+		rookMagic := rookMagics[square]
+		rookHash := uint64(occ&rookMagic.Mask) * rookMagic.Magic
+		rookIndex := (rookHash >> rookMagic.Shift) + uint64(rookMagic.Offset)
+		if rookAttacks[rookIndex]&(b.WRooks|b.WQueens) != 0 {
+			return true
 		}
-		for _, sq := range b.WRooks.ToSquares() {
-			if lineAttack(sq, square, occ, []int{8, -8, 1, -1}) {
-				return true
-			}
-		}
-		for _, sq := range b.WQueens.ToSquares() {
-			if lineAttack(sq, square, occ, []int{7, 9, -7, -9, 8, -8, 1, -1}) {
-				return true
-			}
+
+		// Bishop/Queen attacks using magic bitboards
+		bishopMagic := bishopMagics[square]
+		bishopHash := uint64(occ&bishopMagic.Mask) * bishopMagic.Magic
+		bishopIndex := (bishopHash >> bishopMagic.Shift) + uint64(bishopMagic.Offset)
+		if bishopAttacks[bishopIndex]&(b.WBishops|b.WQueens) != 0 {
+			return true
 		}
 	}
 
-	return false
-}
-
-func lineAttack(from, to int, occ Bitboard, dirs []int) bool {
-	for _, dir := range dirs {
-		sq := from
-		for {
-			sq += dir
-			if sq < 0 || sq > 63 {
-				break
-			}
-
-			fromFile := (sq - dir) % 8
-			toFile := sq % 8
-
-			// Prevent wrapping
-			if dir == 1 || dir == -1 {
-				if abs(toFile-fromFile) != 1 {
-					break
-				}
-			} else if dir == 7 || dir == -7 {
-				if abs(toFile-fromFile) != 1 {
-					break
-				}
-			} else if dir == 9 || dir == -9 {
-				if abs(toFile-fromFile) != 1 {
-					break
-				}
-			}
-
-			if sq == to {
-				return true
-			}
-			if Bitboard(1<<sq)&occ != 0 {
-				break
-			}
-		}
-	}
 	return false
 }
 
@@ -508,90 +465,73 @@ func abs(x int) int {
 	}
 	return x
 }
-
 func (b *Board) IsKingAttacked() bool {
 	var kingSq int
 	var occ = b.FilledSquares
-	var attackers Bitboard
 
 	if b.Turn {
-		// White to move → check if white king is attacked by black
 		kingSq = bits.TrailingZeros64(uint64(b.WKings))
 
-		// Pawn attacks (black → down)
-		attackers |= (((b.BPawns << 7) &^ FileH) | ((b.BPawns << 9) &^ FileA)) & (1 << kingSq)
-
-		// Knight attacks
-		for _, sq := range b.BKnights.ToSquares() {
-			if precomped.Knight[sq].IsSet(kingSq) {
-				return true
-			}
+		if (((b.BPawns<<7)&^FileH)|((b.BPawns<<9)&^FileA))&(1<<kingSq) != 0 {
+			return true
 		}
 
-		// King attacks
-		for _, sq := range b.BKings.ToSquares() {
-			if precomped.King[sq].IsSet(kingSq) {
-				return true
-			}
+		if precomped.Knight[kingSq]&b.BKnights != 0 {
+			return true
 		}
 
-		// Sliding pieces
-		for _, sq := range b.BBishops.ToSquares() {
-			if lineAttack(sq, kingSq, occ, []int{7, 9, -7, -9}) {
-				return true
-			}
+		if precomped.King[kingSq]&b.BKings != 0 {
+			return true
 		}
-		for _, sq := range b.BRooks.ToSquares() {
-			if lineAttack(sq, kingSq, occ, []int{8, -8, 1, -1}) {
-				return true
-			}
+
+		rookMagic := rookMagics[kingSq]
+		rookHash := uint64(occ&rookMagic.Mask) * rookMagic.Magic
+		rookIndex := (rookHash >> rookMagic.Shift) + uint64(rookMagic.Offset)
+		rookAtk := rookAttacks[rookIndex]
+		if rookAtk&(b.BRooks|b.BQueens) != 0 {
+			return true
 		}
-		for _, sq := range b.BQueens.ToSquares() {
-			if lineAttack(sq, kingSq, occ, []int{7, 9, -7, -9, 8, -8, 1, -1}) {
-				return true
-			}
+
+		bishopMagic := bishopMagics[kingSq]
+		bishopHash := uint64(occ&bishopMagic.Mask) * bishopMagic.Magic
+		bishopIndex := (bishopHash >> bishopMagic.Shift) + uint64(bishopMagic.Offset)
+		bishopAtk := bishopAttacks[bishopIndex]
+		if bishopAtk&(b.BBishops|b.BQueens) != 0 {
+			return true
 		}
 	} else {
-		// Black to move → check if black king is attacked by white
 		kingSq = bits.TrailingZeros64(uint64(b.BKings))
 
-		// Pawn attacks (white → up)
-		attackers |= (((b.WPawns >> 7) &^ FileA) | ((b.WPawns >> 9) &^ FileH)) & (1 << kingSq)
-
-		// Knight attacks
-		for _, sq := range b.WKnights.ToSquares() {
-			if precomped.Knight[sq].IsSet(kingSq) {
-				return true
-			}
+		if (((b.WPawns>>7)&^FileA)|((b.WPawns>>9)&^FileH))&(1<<kingSq) != 0 {
+			return true
 		}
 
-		// King attacks
-		for _, sq := range b.WKings.ToSquares() {
-			if precomped.King[sq].IsSet(kingSq) {
-				return true
-			}
+		if precomped.Knight[kingSq]&b.WKnights != 0 {
+			return true
 		}
 
-		// Sliding pieces
-		for _, sq := range b.WBishops.ToSquares() {
-			if lineAttack(sq, kingSq, occ, []int{7, 9, -7, -9}) {
-				return true
-			}
+		if precomped.King[kingSq]&b.WKings != 0 {
+			return true
 		}
-		for _, sq := range b.WRooks.ToSquares() {
-			if lineAttack(sq, kingSq, occ, []int{8, -8, 1, -1}) {
-				return true
-			}
+
+		rookMagic := rookMagics[kingSq]
+		rookHash := uint64(occ&rookMagic.Mask) * rookMagic.Magic
+		rookIndex := (rookHash >> rookMagic.Shift) + uint64(rookMagic.Offset)
+		rookAtk := rookAttacks[rookIndex]
+		if rookAtk&(b.WRooks|b.WQueens) != 0 {
+			return true
 		}
-		for _, sq := range b.WQueens.ToSquares() {
-			if lineAttack(sq, kingSq, occ, []int{7, 9, -7, -9, 8, -8, 1, -1}) {
-				return true
-			}
+
+		bishopMagic := bishopMagics[kingSq]
+		bishopHash := uint64(occ&bishopMagic.Mask) * bishopMagic.Magic
+		bishopIndex := (bishopHash >> bishopMagic.Shift) + uint64(bishopMagic.Offset)
+		bishopAtk := bishopAttacks[bishopIndex]
+		if bishopAtk&(b.WBishops|b.WQueens) != 0 {
+			return true
 		}
 	}
 
-	// If pawn or other attacks exist on the king’s square
-	return attackers != 0
+	return false
 }
 
 /*
@@ -620,13 +560,14 @@ func IsKingAttacked(b *Board) (bool, []Move) {
 
 func (b *Board) Moves() moves.MoveList {
 	ourmoves := b.GenMoves()
-	var filteredmoves moves.MoveList
+	var filteredmoves moves.MoveList = moves.NewMoveList()
 	/*incheck := b.IsKingAttacked()
 	if !incheck {
 		return ourmoves
 	}*/
 	originalturn := b.Turn
-	for _, ourmove := range ourmoves.Moves {
+	for i := 0; i < ourmoves.Count; i++ {
+		ourmove := ourmoves.Moves[i]
 		undo := b.PlayMove(ourmove)
 		b.Turn = originalturn
 		stillincheck := b.IsKingAttacked()
@@ -803,37 +744,28 @@ func (b *Board) UndoMove(move moves.Move, u Undo) {
 
 	allbb := b.AllBitboards()
 
-	// restore turn
 	b.Turn = u.turnOld
 
-	// restore castling
 	b.WCastleK = u.wCastleKOld
 	b.WCastleQ = u.wCastleQOld
 	b.BCastleK = u.bCastleKOld
 	b.BCastleQ = u.bCastleQOld
 
-	// restore EP target
 	b.EnPassantTarget = u.enPassantOld
 
-	// clear destination
 	b.FilledSquares.Clear(u.to)
 
-	// remove moved piece from destination
 	allbb[u.movingPiece].Clear(u.to)
 
-	// restore piece on destination if captured
 	if u.capturedPiece != -1 {
 		allbb[u.capturedPiece].Set(u.to)
 		b.FilledSquares.Set(u.to)
 	}
 
-	// restore original square
 	allbb[u.movingPiece].Set(u.from)
 	b.FilledSquares.Set(u.from)
 
-	// handle promotions
 	if u.promotion != 0 {
-		// remove promoted piece
 		promotedIndex := u.promotion
 		if !u.turnOld {
 			promotedIndex += 6
@@ -841,7 +773,6 @@ func (b *Board) UndoMove(move moves.Move, u Undo) {
 
 		allbb[promotedIndex].Clear(u.to)
 
-		// restore pawn
 		allbb[u.movingPiece].Set(u.from)
 	}
 
@@ -856,12 +787,11 @@ func (b *Board) UndoMove(move moves.Move, u Undo) {
 		}
 	}
 
-	// handle castling
 	if !move.IsCastling() {
 		return
 	}
 	switch move.To() {
-	case 56: // white O-O-O
+	case 56:
 		allbb[0].Clear(58)
 		allbb[2].Clear(59)
 		allbb[0].Set(60)
@@ -871,7 +801,7 @@ func (b *Board) UndoMove(move moves.Move, u Undo) {
 		b.FilledSquares.Set(60)
 		b.FilledSquares.Set(56)
 
-	case 63: // white O-O
+	case 63:
 		allbb[0].Clear(62)
 		allbb[2].Clear(61)
 		allbb[0].Set(60)
@@ -881,7 +811,7 @@ func (b *Board) UndoMove(move moves.Move, u Undo) {
 		b.FilledSquares.Set(60)
 		b.FilledSquares.Set(63)
 
-	case 0: // black O-O-O
+	case 0:
 		allbb[6].Clear(2)
 		allbb[8].Clear(3)
 		allbb[6].Set(4)
@@ -891,7 +821,7 @@ func (b *Board) UndoMove(move moves.Move, u Undo) {
 		b.FilledSquares.Set(4)
 		b.FilledSquares.Set(0)
 
-	case 7: // black O-O
+	case 7:
 		allbb[6].Clear(6)
 		allbb[8].Clear(5)
 		allbb[6].Set(4)
@@ -1085,12 +1015,170 @@ func (b *Board) IsInCheck() bool {
 	return false
 }
 
+type Magic struct {
+	Mask   Bitboard
+	Magic  uint64
+	Shift  uint8
+	Offset uint32
+}
+
+var rookMagics [64]Magic
+var rookAttacks []Bitboard
+
+var bishopMagics [64]Magic
+var bishopAttacks []Bitboard
+
+type RookLookupKey struct {
+	StartSquare  int
+	Blockerboard Bitboard
+}
+
 var RookMovementMasks [64]Bitboard
 var BishopMovementMasks [64]Bitboard
-var RookOccupancyMasks [64]Bitboard
 var BishopOccupancyMasks [64]Bitboard
+var RookLookupTable map[RookLookupKey]Bitboard
 
-func GenerateOccupancyMasks(mask Bitboard) {
+var precomputedRookMagics = [64]uint64{
+	0x8080002484104000, 0x8040042000401002,
+	0x14800A8010002000, 0x1200084020A41200,
+	0x0200040902006010, 0x0200020024100108,
+	0x490000840E000100, 0x0080008000482100,
+	0xA004800020804004, 0x0000401000200240,
+	0x1002004011820020, 0x0042801800100084,
+	0x8001000528001100, 0x0002000824100E00,
+	0x0113000A00090044, 0x4603000892124100,
+	0x1480010021004580, 0x8082120020830040,
+	0x0200808020001000, 0x040800801000808A,
+	0x0424008008028004, 0x8001010008040002,
+	0x2068808001000E00, 0x04000200040880E3,
+	0x0040400080008120, 0x1700600440100040,
+	0x4008700080600080, 0x9040500080080480,
+	0x1800840180080080, 0x004E1C0080420080,
+	0x0080140101000200, 0x09000112000040A4,
+	0x2000C0048A800A20, 0x0810102000400048,
+	0x0020008022801000, 0x0140810802801000,
+	0x0428800800802401, 0x1401810200800400,
+	0x10000A0844000110, 0x0060004882000401,
+	0x0300800040088020, 0x0860004000208080,
+	0x0000600100410010, 0x2004100421010009,
+	0x0001000801050010, 0x02A1220004008080,
+	0x1002024801440010, 0x000001C084220011,
+	0x281580050028C100, 0x0000220080490200,
+	0x0030052000801080, 0x0004120021415A00,
+	0x0282050088001100, 0x0000804400460080,
+	0x0100090802901C00, 0x0022018405014200,
+	0x0001401422810202, 0x0000400010802101,
+	0x1101001108200045, 0x02C4C42009001001,
+	0x9012002010046842, 0x2481008A24000801,
+	0x00000800C1021024, 0x0384006402408502,
+}
+
+var precomputedRookShifts = [64]uint8{
+	52, 53, 53, 53, 53, 53, 53, 52, 53, 54, 54, 54, 54, 54, 54, 53,
+	53, 54, 54, 54, 54, 54, 54, 53, 53, 54, 54, 54, 54, 54, 54, 53,
+	53, 54, 54, 54, 54, 54, 54, 53, 53, 54, 54, 54, 54, 54, 54, 53,
+	53, 54, 54, 54, 54, 54, 54, 53, 52, 53, 53, 53, 53, 53, 53, 52,
+}
+
+var precomputedBishopMagics = [64]uint64{
+	0x4004000400041004, 0x4004012204030084,
+	0x0008080918A0000A, 0x0124105201010010,
+	0x0202021062010000, 0x00020A9004080040,
+	0x0203031010069002, 0x1011020004200080,
+	0x2082240800080001, 0x0104025042028100,
+	0x0010100129410000, 0x0000740400802000,
+	0x2000141420000020, 0x0000148220210040,
+	0x0800804210D00800, 0x8200100C00060030,
+	0x0000408800100088, 0x002040A204010200,
+	0x82408408020810A0, 0x0018008222084000,
+	0x00A4000080A00202, 0x00C100208080C000,
+	0x5008830202012000, 0x2902002040020040,
+	0x0000224030001000, 0x0408028A04100226,
+	0x000412030C080410, 0xC012006042008200,
+	0x2201840200802000, 0x0000414002011000,
+	0x0435040500C20881, 0x0000810015040200,
+	0x1011004000080010, 0x00C1311003081080,
+	0x0010280801040020, 0x6003040100100901,
+	0x20A0860200040090, 0x0001050202150810,
+	0x0001084100008404, 0x0808C40004000804,
+	0x0082003080200200, 0x0008884808010220,
+	0x0110820801000A00, 0x000060E038000100,
+	0x00100803040060C0, 0x6001200080802101,
+	0x0050030200908421, 0x0210000420201128,
+	0x0010440008004082, 0xA102120104120C00,
+	0x08C04111C1100008, 0xA002000294040020,
+	0x0004109012020000, 0x0004110250044014,
+	0x0040342104012402, 0x0050220080410001,
+	0x8200008010080020, 0x0400006582086044,
+	0x2062100110980404, 0x0008080020218800,
+	0x0000020940104444, 0x06002040026C0101,
+	0x2022104602040430, 0x0108080800010002,
+}
+
+var precomputedBishopShifts = [64]uint8{
+	51, 59, 59, 59, 59, 59, 59, 53, 53, 59, 59, 59, 59, 59, 59, 54,
+	54, 59, 57, 57, 57, 57, 59, 54, 54, 59, 57, 55, 55, 57, 59, 54,
+	54, 59, 57, 55, 55, 57, 59, 54, 54, 59, 57, 57, 57, 57, 59, 54,
+	54, 59, 59, 59, 59, 59, 59, 53, 53, 59, 59, 59, 59, 59, 59, 51,
+}
+
+func InitMagicBitboards() {
+	GenerateMovementMasks()
+
+	var offset uint32 = 0
+
+	for square := 0; square < 64; square++ {
+		relevantBits := 64 - precomputedRookShifts[square]
+
+		rookMagics[square] = Magic{
+			Mask:   RookMovementMasks[square],
+			Magic:  precomputedRookMagics[square],
+			Shift:  precomputedRookShifts[square],
+			Offset: offset,
+		}
+
+		offset += 1 << relevantBits
+	}
+
+	rookAttacks = make([]Bitboard, offset)
+
+	for square := 0; square < 64; square++ {
+		magic := rookMagics[square]
+		occupancies := GenerateOccupancyMasks(magic.Mask)
+
+		for _, occ := range occupancies {
+			attacks := RecurringRookDepth(square, occ)
+			hash := uint64(occ&magic.Mask) * magic.Magic
+			index := (hash >> magic.Shift) + uint64(magic.Offset)
+			rookAttacks[index] = attacks
+		}
+	}
+
+	var bishopOffset uint32 = 0
+	for square := 0; square < 64; square++ {
+		relevantBits := 64 - precomputedBishopShifts[square]
+		bishopMagics[square] = Magic{
+			Mask:   BishopMovementMasks[square],
+			Magic:  precomputedBishopMagics[square],
+			Shift:  precomputedBishopShifts[square],
+			Offset: bishopOffset,
+		}
+		bishopOffset += 1 << relevantBits
+	}
+	bishopAttacks = make([]Bitboard, bishopOffset)
+	for square := 0; square < 64; square++ {
+		magic := bishopMagics[square]
+		occupancies := GenerateOccupancyMasks(magic.Mask)
+		for _, occ := range occupancies {
+			attacks := RecurringBishopDepth(square, occ)
+			hash := uint64(occ&magic.Mask) * magic.Magic
+			index := (hash >> magic.Shift) + uint64(magic.Offset)
+			bishopAttacks[index] = attacks
+		}
+	}
+}
+
+func GenerateOccupancyMasks(mask Bitboard) []Bitboard {
 	bits := []int{}
 
 	for i := 0; i < 64; i++ {
@@ -1101,12 +1189,15 @@ func GenerateOccupancyMasks(mask Bitboard) {
 
 	lenbits := len(bits)
 	numPatterns := 1 << lenbits
+	OccupancyMasks := make([]Bitboard, numPatterns)
 	for patternIndex := 0; patternIndex < numPatterns; patternIndex++ {
 		for bitIndex := 0; bitIndex < lenbits; bitIndex++ {
 			bit := (patternIndex >> bitIndex) & 1
-			RookOccupancyMasks[patternIndex] |= Bitboard(bit << bits[bitIndex])
+			OccupancyMasks[patternIndex] |= Bitboard(bit << bits[bitIndex])
 		}
 	}
+
+	return OccupancyMasks
 }
 
 func GenerateMovementMasks() {
@@ -1123,7 +1214,7 @@ func GenerateMovementMasks() {
 		for i := square + 1; i < square-startFile+8-1; i++ {
 			mask |= 1 << i
 		}
-		for i := square - 1; i >= square-startFile; i-- {
+		for i := square - 1; i > square-startFile; i-- {
 			mask |= 1 << i
 		}
 
@@ -1166,164 +1257,213 @@ func GenerateMovementMasks() {
 	}
 }
 
-func RecurringRookDepth(bb *Board, turn bool, rmoves *moves.MoveList) *moves.MoveList {
-	var recurringrookmoves *moves.MoveList = rmoves
+func GenerateRookLookuptable() {
+	GenerateMovementMasks()
+	for i := 0; i < 64; i++ {
+		movementmask := RookMovementMasks[i]
+		occmasks := GenerateOccupancyMasks(movementmask)
 
-	var squares []int
-	if !turn {
-		squares = TrailingZerosLoop(bb.BRooks)
-	} else {
-		squares = TrailingZerosLoop(bb.WRooks)
-	}
-
-	for _, startsquare := range squares {
-		var savededgeblockeddirs []bool = make([]bool, 4)
-		savededgeblockeddirs[0] = true
-		savededgeblockeddirs[1] = true
-		savededgeblockeddirs[2] = true
-		savededgeblockeddirs[3] = true
-		if startsquare < 64 {
-			for n := range 7 {
-				moveboards := RookDepth(startsquare, n+1)
-				if len(moveboards) > 0 {
-					for i := range 4 {
-						if !savededgeblockeddirs[i] {
-							continue
-						}
-						targetsquare := bits.TrailingZeros64(uint64(moveboards[i]))
-
-						if targetsquare < 64 {
-							pieceat := bb.PieceAt(targetsquare)
-							if (pieceat > 5 && turn) || (pieceat < 6 && pieceat >= 0 && !turn) {
-								//fmt.Println(fmt.Sprintf("%d wants to go to %d", startsquare, targetsquare))
-								Move := moves.NewMove(startsquare, targetsquare, moves.FlagNone)
-								recurringrookmoves.Add(Move)
-								savededgeblockeddirs[i] = false
-							} else if pieceat == -1 {
-								Move := moves.NewMove(startsquare, targetsquare, moves.FlagNone)
-								recurringrookmoves.Add(Move)
-							} else {
-								//fmt.Println(targetsquare)
-								savededgeblockeddirs[i] = false
-							}
-						}
-					}
-				}
+		for _, occupancyboard := range occmasks {
+			legalmoveboard := RecurringRookDepth(i, occupancyboard)
+			lkey := RookLookupKey{
+				i,
+				occupancyboard,
 			}
+			RookLookupTable[lkey] = legalmoveboard
 		}
 	}
-	return recurringrookmoves
 }
 
-func RecurringBishopDepth(bb *Board, turn bool, bmoves *moves.MoveList) *moves.MoveList {
-	var recurringbishopmoves *moves.MoveList = bmoves
-
-	var squares []int
-	if !turn {
-		squares = TrailingZerosLoop(bb.BBishops)
-	} else {
-		squares = TrailingZerosLoop(bb.WBishops)
+func isValidSquare(target, start, dir int) bool {
+	// Check if target is on the board
+	if target < 0 || target >= 64 {
+		return false
 	}
 
-	for _, startsquare := range squares {
-		var savededgeblockeddirs []bool
-		if startsquare < 64 {
-			for n := range 7 {
-				moveboards, edgeblockeddirs := BishopDepth(startsquare, n+1)
-				if savededgeblockeddirs == nil {
-					savededgeblockeddirs = edgeblockeddirs
-				}
-				//fmt.Println(moveboards)
-				for ss, v := range edgeblockeddirs {
-					if !v {
-						savededgeblockeddirs[ss] = false
-					}
-				}
-				if len(moveboards) > 0 {
-					for i := range 4 {
-						if savededgeblockeddirs[i] == false {
-							continue
-						}
-						targetsquare := bits.TrailingZeros64(uint64(moveboards[i]))
-						if targetsquare < 64 {
-							pieceat := bb.PieceAt(targetsquare)
-							if (pieceat > 5 && turn) || (pieceat < 6 && pieceat >= 0 && !turn) {
-								//fmt.Println(fmt.Sprintf("%d wants to go to %d", startsquare, targetsquare))
-								Move := moves.NewMove(startsquare, targetsquare, moves.FlagNone)
-								recurringbishopmoves.Add(Move)
-								savededgeblockeddirs[i] = false
-							} else if pieceat == -1 {
-								Move := moves.NewMove(startsquare, targetsquare, moves.FlagNone)
-								recurringbishopmoves.Add(Move)
-							} else {
-								//fmt.Println(targetsquare)
-								savededgeblockeddirs[i] = false
-							}
-						}
-					}
-				}
-			}
-		}
+	// Prevent wrapping around board edges
+	startRank := start / 8
+	startFile := start % 8
+	targetRank := target / 8
+	targetFile := target % 8
+
+	switch dir {
+	case 1: // East
+		return targetRank == startRank && targetFile > startFile
+	case -1: // West
+		return targetRank == startRank && targetFile < startFile
+	case 8: // South
+		return targetFile == startFile
+	case -8: // North
+		return targetFile == startFile
+	default:
+		return false
 	}
-	return recurringbishopmoves
 }
 
-func RecurringQueenDepth(bb *Board, turn bool, qmoves *moves.MoveList) *moves.MoveList {
-	var recurringqueenmoves *moves.MoveList = qmoves
+func RecurringRookDepth(square int, blockers Bitboard) Bitboard {
+	var moveBitboard Bitboard = 0
 
-	var squares []int
-	if !turn {
-		squares = TrailingZerosLoop(bb.BQueens)
-	} else {
-		squares = TrailingZerosLoop(bb.WQueens)
-	}
+	for _, dir := range []int{-8, 8, -1, 1} { // n s w e
+		target := square
+		for {
+			target += dir
+			if !isValidSquare(target, square, dir) {
+				break
+			}
 
-	for _, startsquare := range squares {
-		var savededgeblockeddirs []bool
-		if startsquare < 64 {
-			for n := range 7 {
-				moveboards, edgeblockeddirs := QueenDepth(startsquare, n+1)
-				if savededgeblockeddirs == nil {
-					savededgeblockeddirs = edgeblockeddirs
-				}
-				for ss, v := range edgeblockeddirs {
-					if !v {
-						savededgeblockeddirs[ss] = false
-					}
-				}
+			targetBit := uint64(1) << target
+			moveBitboard |= Bitboard(targetBit)
 
-				if len(moveboards) > 0 {
-					for i := range 8 {
-
-						if savededgeblockeddirs[i] == false {
-							continue
-						}
-						targetsquare := bits.TrailingZeros64(uint64(moveboards[i]))
-						if targetsquare < 64 {
-							pieceat := bb.PieceAt(targetsquare)
-							if (pieceat > 5 && turn) || (pieceat < 6 && pieceat >= 0 && !turn) {
-								//fmt.Println(fmt.Sprintf("%d wants to go to %d", startsquare, targetsquare))
-								Move := moves.NewMove(startsquare, targetsquare, moves.FlagNone)
-								recurringqueenmoves.Add(Move)
-								savededgeblockeddirs[i] = false
-							} else if pieceat == -1 {
-								Move := moves.NewMove(startsquare, targetsquare, moves.FlagNone)
-								recurringqueenmoves.Add(Move)
-							} else {
-								//fmt.Println(targetsquare)
-								savededgeblockeddirs[i] = false
-							}
-						}
-					}
-				}
+			if blockers&Bitboard(targetBit) != 0 {
+				break
 			}
 		}
 	}
-	return recurringqueenmoves
+	return moveBitboard
+}
+
+func GenRookMoves(b *Board, pieces Bitboard) moves.MoveList {
+	var friendly Bitboard
+
+	if b.Turn {
+		friendly = b.WPawns | b.WKnights | b.WBishops |
+			b.WRooks | b.WQueens | b.WKings
+	} else {
+		friendly = b.BPawns | b.BKnights | b.BBishops |
+			b.BRooks | b.BQueens | b.BKings
+	}
+
+	occupied := b.FilledSquares
+	moveList := moves.NewMoveList()
+	for pieces != 0 {
+		square := bits.TrailingZeros64(uint64(pieces))
+		pieces &= pieces - 1
+
+		// Use the magic lookup table directly
+		magic := rookMagics[square]
+		hash := uint64(occupied&magic.Mask) * magic.Magic
+		index := (hash >> magic.Shift) + uint64(magic.Offset)
+		attacks := rookAttacks[index]
+
+		legalMoves := attacks &^ friendly
+
+		for legalMoves != 0 {
+			target := bits.TrailingZeros64(uint64(legalMoves))
+			legalMoves &= legalMoves - 1
+
+			moveList.Add(moves.NewMove(square, target, moves.FlagNone))
+		}
+	}
+
+	return moveList
+}
+
+func GenBishopMoves(b *Board, pieces Bitboard) moves.MoveList {
+	var friendly Bitboard
+	if b.Turn {
+		friendly = b.WPawns | b.WKnights | b.WBishops |
+			b.WRooks | b.WQueens | b.WKings
+	} else {
+		friendly = b.BPawns | b.BKnights | b.BBishops |
+			b.BRooks | b.BQueens | b.BKings
+	}
+
+	occupied := b.FilledSquares
+	moveList := moves.NewMoveList()
+
+	for pieces != 0 {
+		square := bits.TrailingZeros64(uint64(pieces))
+		pieces &= pieces - 1
+
+		magic := bishopMagics[square]
+		hash := uint64(occupied&magic.Mask) * magic.Magic
+		index := (hash >> magic.Shift) + uint64(magic.Offset)
+		attacks := bishopAttacks[index]
+
+		legalMoves := attacks &^ friendly
+
+		for legalMoves != 0 {
+			target := bits.TrailingZeros64(uint64(legalMoves))
+			legalMoves &= legalMoves - 1
+			moveList.Add(moves.NewMove(square, target, moves.FlagNone))
+		}
+	}
+
+	return moveList
+}
+func GenQueenMoves(b *Board, pieces Bitboard) moves.MoveList {
+	var friendly Bitboard
+	if b.Turn {
+		friendly = b.WPawns | b.WKnights | b.WBishops |
+			b.WRooks | b.WQueens | b.WKings
+	} else {
+		friendly = b.BPawns | b.BKnights | b.BBishops |
+			b.BRooks | b.BQueens | b.BKings
+	}
+
+	occupied := b.FilledSquares
+	moveList := moves.NewMoveList()
+
+	for pieces != 0 {
+		square := bits.TrailingZeros64(uint64(pieces))
+		pieces &= pieces - 1
+
+		// Queen = Rook attacks + Bishop attacks
+		rookMagic := rookMagics[square]
+		rookHash := uint64(occupied&rookMagic.Mask) * rookMagic.Magic
+		rookIndex := (rookHash >> rookMagic.Shift) + uint64(rookMagic.Offset)
+		rookAtk := rookAttacks[rookIndex] // Changed variable name
+
+		bishopMagic := bishopMagics[square]
+		bishopHash := uint64(occupied&bishopMagic.Mask) * bishopMagic.Magic
+		bishopIndex := (bishopHash >> bishopMagic.Shift) + uint64(bishopMagic.Offset)
+		bishopAtk := bishopAttacks[bishopIndex] // Changed variable name
+
+		attacks := rookAtk | bishopAtk
+		legalMoves := attacks &^ friendly
+
+		for legalMoves != 0 {
+			target := bits.TrailingZeros64(uint64(legalMoves))
+			legalMoves &= legalMoves - 1
+			moveList.Add(moves.NewMove(square, target, moves.FlagNone))
+		}
+	}
+
+	return moveList
+}
+
+func RecurringBishopDepth(square int, blockers Bitboard) Bitboard {
+	var moveBitboard Bitboard = 0
+
+	// NE (+9), NW (+7), SE (-7), SW (-9)
+	for _, dir := range []int{9, 7, -7, -9} {
+		target := square
+		for {
+			target += dir
+			if target < 0 || target >= 64 {
+				break
+			}
+
+			// Check for wrapping
+			startFile := (target - dir) % 8
+			targetFile := target % 8
+			if abs(targetFile-startFile) != 1 {
+				break
+			}
+
+			targetBit := uint64(1) << target
+			moveBitboard |= Bitboard(targetBit)
+
+			if blockers&Bitboard(targetBit) != 0 {
+				break
+			}
+		}
+	}
+	return moveBitboard
 }
 
 func (b *Board) GenMoves() moves.MoveList {
-	allMoves := moves.MoveList{}
+	allMoves := moves.NewMoveList()
 	ourpieces, opponentpieces := b.Pieces()
 
 	if b.Turn {
@@ -1341,17 +1481,17 @@ func (b *Board) GenMoves() moves.MoveList {
 					}
 				}
 			case 1:
-				var placeholder moves.MoveList
-				n := RecurringQueenDepth(b, b.Turn, &placeholder)
-				allMoves.Combine(n)
+				moves := GenQueenMoves(b, bb)
+				allMoves.Combine(&moves)
 			case 2:
-				var placeholder moves.MoveList
-				n := RecurringRookDepth(b, b.Turn, &placeholder)
-				allMoves.Combine(n)
+				moves := GenRookMoves(b, bb)
+				allMoves.Combine(&moves)
+				//var placeholder moves.MoveList
+				//n := RecurringRookDepth(b, b.Turn, &placeholder)
+				//allMoves.Combine(n)
 			case 3:
-				var placeholder moves.MoveList
-				n := RecurringBishopDepth(b, b.Turn, &placeholder)
-				allMoves.Combine(n)
+				moves := GenBishopMoves(b, bb)
+				allMoves.Combine(&moves)
 			case 4:
 				squares := TrailingZerosLoop(bb)
 				for _, square := range squares {
@@ -1462,17 +1602,14 @@ func (b *Board) GenMoves() moves.MoveList {
 					}
 				}
 			case 1:
-				var placeholder moves.MoveList
-				n := RecurringQueenDepth(b, b.Turn, &placeholder)
-				allMoves.Combine(n)
+				moves := GenQueenMoves(b, bb)
+				allMoves.Combine(&moves)
 			case 2:
-				var placeholder moves.MoveList
-				n := RecurringRookDepth(b, b.Turn, &placeholder)
-				allMoves.Combine(n)
+				moves := GenRookMoves(b, bb)
+				allMoves.Combine(&moves)
 			case 3:
-				var placeholder moves.MoveList
-				n := RecurringBishopDepth(b, b.Turn, &placeholder)
-				allMoves.Combine(n)
+				moves := GenBishopMoves(b, bb)
+				allMoves.Combine(&moves)
 			case 4:
 				squares := TrailingZerosLoop(bb)
 				for _, square := range squares {

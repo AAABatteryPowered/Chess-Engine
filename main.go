@@ -16,11 +16,12 @@ func Perft(b *board.Board, depth int) uint64 {
 	moves := b.Moves()
 
 	if depth == 1 {
-		return uint64(len(moves.Moves))
+		return uint64(moves.Count)
 	}
 
 	var nodes uint64
-	for _, move := range moves.Moves {
+	for i := 0; i < moves.Count; i++ {
+		move := moves.Moves[i]
 		undo := b.PlayMove(move)
 		nodes += Perft(b, depth-1)
 		b.UndoMove(move, undo)
@@ -38,12 +39,13 @@ func PerftDivide(b *board.Board, depth int) uint64 {
 		nodes uint64
 		str   string
 	}
-	results := make([]MoveResult, 0, len(Moves.Moves))
+	results := make([]MoveResult, 0, Moves.Count)
 
 	fmt.Printf("\nPerft Divide (depth %d):\n", depth)
 	fmt.Println("------------------------")
 
-	for _, move := range Moves.Moves {
+	for i := 0; i < Moves.Count; i++ {
+		move := Moves.Moves[i]
 		undo := b.PlayMove(move)
 
 		var nodes uint64
@@ -107,11 +109,9 @@ func timer(name string) func() {
 
 func main() {
 	defer timer("main")()
-	b := &board.Board{}
+	board.InitMagicBitboards()
+	b := board.Board{}
 	b.FromFen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
 
-	fmt.Println(Perft(b, 5))
-
-	board.GenerateMovementMasks()
-	board.BishopMovementMasks[28].DebugPrint()
+	fmt.Println(Perft(&b, 5))
 }
