@@ -19,11 +19,11 @@ const (
 )
 
 type Undo struct {
-	from, to      int
-	movingPiece   int
-	capturedPiece int
-	promotion     int
-	enPassantOld  int
+	from, to      int8
+	movingPiece   int8
+	capturedPiece int8
+	promotion     uint8
+	enPassantOld  int8
 	wCastleKOld   bool
 	wCastleQOld   bool
 	bCastleKOld   bool
@@ -57,7 +57,11 @@ type Board struct {
 	BCastleQ bool
 	BCastleK bool
 
-	EnPassantTarget int
+	EnPassantTarget int8
+
+	AllBitboards [12]*Bitboard
+	UndoStack    [64]Undo
+	UndoCount    int
 
 	HalfMoves int
 	FullMoves int
@@ -83,7 +87,7 @@ type Move struct {
 
 type Bitboard uint64
 
-func algebraicToSquare(notation string) int {
+func algebraicToSquare(notation string) int8 {
 	if len(notation) != 2 {
 		return -1
 	}
@@ -91,18 +95,18 @@ func algebraicToSquare(notation string) int {
 	file := int(notation[0] - 'a')
 	rank := int(notation[1] - '1')
 
-	return rank*8 + file
+	return int8(rank*8 + file)
 }
 
-func (b *Bitboard) Set(pos int) {
+func (b *Bitboard) Set(pos int8) {
 	*b |= 1 << pos
 }
 
-func (b *Bitboard) Clear(pos int) {
+func (b *Bitboard) Clear(pos int8) {
 	*b &^= 1 << pos
 }
 
-func (b *Bitboard) Toggle(pos int) {
+func (b *Bitboard) Toggle(pos int8) {
 	*b ^= 1 << pos
 }
 
@@ -114,7 +118,7 @@ func (b *Board) Pieces() (Bitboard, Bitboard) {
 	}
 }
 
-func (b Bitboard) IsSet(pos int) bool {
+func (b Bitboard) IsSet(pos int8) bool {
 	return (b>>pos)&1 == 1
 }
 
@@ -122,7 +126,7 @@ func (b *Board) SetTurn(t bool) {
 	b.Turn = t
 }
 
-func notationToSquare(notation string) int {
+func notationToSquare(notation string) int8 {
 	if len(notation) != 2 {
 		return -1
 	}
@@ -134,17 +138,33 @@ func notationToSquare(notation string) int {
 		return -1
 	}
 
-	return int(rank)*8 + int(file)
+	return int8(rank)*8 + int8(file)
 }
 
 func (b *Board) FromFen(s string) {
-	posPointer := 0
+	b.AllBitboards = [12]*Bitboard{
+		&b.WKings,
+		&b.WQueens,
+		&b.WRooks,
+		&b.WBishops,
+		&b.WKnights,
+		&b.WPawns,
+
+		&b.BKings,
+		&b.BQueens,
+		&b.BRooks,
+		&b.BBishops,
+		&b.BKnights,
+		&b.BPawns,
+	}
+
+	var posPointer int8 = 0
 	var subdata string
 outerLoop:
 	for xx, ch := range s {
 		switch ch {
 		case '1', '2', '3', '4', '5', '6', '7', '8':
-			num := int(ch - '0')
+			num := int8(ch - '0')
 			posPointer += num
 		case 'K':
 			b.WKings.Set(posPointer)
@@ -255,13 +275,53 @@ func (b *Board) Copy() *Board {
 	return newBoard
 }
 
-func (b *Board) PieceAt(square int) int {
-	allbb := b.AllBitboards()
-	for index, board := range allbb {
-		if board.IsSet(square) {
-			return index
-		}
+func (b *Board) PieceAt(square int8) int8 {
+	if !b.FilledSquares.IsSet(square) {
+		return -1
 	}
+
+	if b.WPawns.IsSet(square) {
+		return 5
+	}
+	if b.BPawns.IsSet(square) {
+		return 11
+	}
+
+	if b.WKnights.IsSet(square) {
+		return 4
+	}
+	if b.BKnights.IsSet(square) {
+		return 10
+	}
+
+	if b.WBishops.IsSet(square) {
+		return 3
+	}
+	if b.BBishops.IsSet(square) {
+		return 9
+	}
+
+	if b.WRooks.IsSet(square) {
+		return 2
+	}
+	if b.BRooks.IsSet(square) {
+		return 8
+	}
+
+	if b.WQueens.IsSet(square) {
+		return 1
+	}
+	if b.BQueens.IsSet(square) {
+		return 7
+	}
+
+	if b.WKings.IsSet(square) {
+		return 0
+	}
+	if b.BKings.IsSet(square) {
+		return 6
+	}
+
 	return -1
 }
 
@@ -280,32 +340,14 @@ func (b Bitboard) ToSquares() []int {
 	return squares
 }
 
-func (b *Board) AllBitboards() [12]*Bitboard {
-	return [12]*Bitboard{
-		&b.WKings,
-		&b.WQueens,
-		&b.WRooks,
-		&b.WBishops,
-		&b.WKnights,
-		&b.WPawns,
-
-		&b.BKings,
-		&b.BQueens,
-		&b.BRooks,
-		&b.BBishops,
-		&b.BKnights,
-		&b.BPawns,
-	}
-}
-
 func (b *Board) DebugPrint() {
 	var finalstr string
 	newlinesadded := 0
-	allbbs := b.AllBitboards()
+	allbbs := &b.AllBitboards
 	for pos := 0; pos < 64; pos++ {
 		piecefound := false
 		for i, bb := range allbbs {
-			if bb.IsSet(pos) {
+			if bb.IsSet(int8(pos)) {
 				switch i {
 				case 0:
 					finalstr += "K "
@@ -568,13 +610,13 @@ func (b *Board) Moves() moves.MoveList {
 	originalturn := b.Turn
 	for i := 0; i < ourmoves.Count; i++ {
 		ourmove := ourmoves.Moves[i]
-		undo := b.PlayMove(ourmove)
+		b.PlayMove(ourmove)
 		b.Turn = originalturn
 		stillincheck := b.IsKingAttacked()
 		if !stillincheck {
 			filteredmoves.Add(ourmove)
 		}
-		b.UndoMove(ourmove, undo)
+		b.UndoMove(ourmove)
 	}
 	return filteredmoves
 }
@@ -596,27 +638,28 @@ func (b *Board) Moves() moves.MoveList {
 	return filteredmoves
 }*/
 
-func (b *Board) PlayMove(move moves.Move) Undo {
-	undo := Undo{
-		from:          move.From(),
-		to:            move.To(),
-		movingPiece:   b.PieceAt(move.From()),
-		capturedPiece: b.PieceAt(move.To()),
-		promotion:     move.PromotionPiece(),
-		enPassantOld:  b.EnPassantTarget,
-		wCastleKOld:   b.WCastleK,
-		wCastleQOld:   b.WCastleQ,
-		bCastleKOld:   b.BCastleK,
-		bCastleQOld:   b.BCastleQ,
-		turnOld:       b.Turn,
-	}
-
+func (b *Board) PlayMove(move moves.Move) {
 	movingpiece := b.PieceAt(move.From())
 	targetpiece := b.PieceAt(move.To())
+
+	u := &b.UndoStack[b.UndoCount]
+	u.from = move.From()
+	u.to = move.To()
+	u.movingPiece = movingpiece
+	u.capturedPiece = int8(targetpiece)
+	u.promotion = move.PromotionPiece()
+	u.enPassantOld = b.EnPassantTarget
+	u.wCastleKOld = b.WCastleK
+	u.wCastleQOld = b.WCastleQ
+	u.bCastleKOld = b.BCastleK
+	u.bCastleQOld = b.BCastleQ
+	u.turnOld = b.Turn
+	b.UndoCount++
+
 	b.FilledSquares.Clear(move.From())
 	b.EnPassantTarget = -1
 	castling := move.IsCastling()
-	allbb := b.AllBitboards()
+	allbb := &b.AllBitboards
 	if castling {
 		switch move.To() {
 		case 56:
@@ -736,13 +779,14 @@ func (b *Board) PlayMove(move moves.Move) Undo {
 	}
 
 	b.Turn = !b.Turn
-
-	return undo
 }
 
-func (b *Board) UndoMove(move moves.Move, u Undo) {
+func (b *Board) UndoMove(move moves.Move) {
 
-	allbb := b.AllBitboards()
+	b.UndoCount--
+	u := &b.UndoStack[b.UndoCount]
+
+	allbb := &b.AllBitboards
 
 	b.Turn = u.turnOld
 
@@ -833,141 +877,6 @@ func (b *Board) UndoMove(move moves.Move, u Undo) {
 	}
 }
 
-func RookDepth(startsquare int, depth int) []Bitboard {
-	var b Bitboard = 0
-	b.Set(startsquare)
-
-	var bbs []Bitboard = make([]Bitboard, 0)
-
-	north := b << (8 * depth) // &^ b.w
-	south := b >> (8 * depth)
-	east := (b << depth) &^ FileA
-	west := (b >> depth) &^ FileH
-
-	if depth <= 7-(startsquare%8) {
-		bbs = append(bbs, east)
-	} else {
-		bbs = append(bbs, 0)
-	}
-	if depth <= (startsquare % 8) {
-		bbs = append(bbs, west)
-	} else {
-		bbs = append(bbs, 0)
-	}
-
-	bbs = append(bbs, north)
-	bbs = append(bbs, south)
-
-	return bbs
-}
-
-func BishopDepth(startsquare int, depth int) ([]Bitboard, []bool) {
-	var b Bitboard = 0
-	b.Set(startsquare)
-
-	var bbs []Bitboard = make([]Bitboard, 0)
-	returningbools := make([]bool, 4)
-
-	sw := b << (7 * depth) &^ FileH
-	se := b << (9 * depth) &^ FileA
-	nw := b >> (9 * depth) &^ FileH
-	ne := b >> (7 * depth) &^ FileA
-
-	bbs = append(bbs, nw)
-	bbs = append(bbs, ne)
-	bbs = append(bbs, sw)
-	bbs = append(bbs, se)
-
-	if nw == 0 {
-		returningbools[0] = false
-	} else {
-		returningbools[0] = true
-	}
-	if ne == 0 {
-		returningbools[1] = false
-	} else {
-		returningbools[1] = true
-	}
-	if sw == 0 {
-		returningbools[2] = false
-	} else {
-		returningbools[2] = true
-	}
-	if se == 0 {
-		returningbools[3] = false
-	} else {
-		returningbools[3] = true
-	}
-
-	return bbs, returningbools
-}
-
-func QueenDepth(startsquare int, depth int) ([]Bitboard, []bool) {
-	var b Bitboard = 0
-	b.Set(startsquare)
-
-	var bbs []Bitboard = make([]Bitboard, 0)
-	returningbools := make([]bool, 8)
-
-	north := b << (8 * depth) // &^ b.w
-	south := b >> (8 * depth)
-	east := (b << depth) &^ FileA
-	west := (b >> depth) &^ FileH
-	nw := b << (7 * depth) &^ FileH
-	ne := b << (9 * depth) &^ FileA
-	sw := b >> (9 * depth) &^ FileH
-	se := b >> (7 * depth) &^ FileA
-
-	if depth <= 7-(startsquare%8) {
-		bbs = append(bbs, east)
-	} else {
-		bbs = append(bbs, 0)
-	}
-	if depth <= (startsquare % 8) {
-		bbs = append(bbs, west)
-	} else {
-		bbs = append(bbs, 0)
-	}
-
-	//e,w,nw,ne,sw,se,n,s
-
-	bbs = append(bbs, nw)
-	bbs = append(bbs, ne)
-	bbs = append(bbs, sw)
-	bbs = append(bbs, se)
-
-	if nw == 0 {
-		returningbools[2] = false
-	} else {
-		returningbools[2] = true
-	}
-	if ne == 0 {
-		returningbools[3] = false
-	} else {
-		returningbools[3] = true
-	}
-	if sw == 0 {
-		returningbools[4] = false
-	} else {
-		returningbools[4] = true
-	}
-	if se == 0 {
-		returningbools[5] = false
-	} else {
-		returningbools[5] = true
-	}
-
-	returningbools[0] = true
-	returningbools[1] = true
-	returningbools[6] = true
-	returningbools[7] = true
-
-	bbs = append(bbs, north)
-	bbs = append(bbs, south)
-
-	return bbs, returningbools
-}
-
 func GeneratePrecomputedTables() *preCompTables {
 	precomp := &preCompTables{}
 
@@ -998,12 +907,12 @@ func GeneratePrecomputedTables() *preCompTables {
 
 var precomped *preCompTables = GeneratePrecomputedTables()
 
-func TrailingZerosLoop(b Bitboard) []int {
-	var squareslist []int
+func TrailingZerosLoop(b Bitboard) []int8 {
+	var squareslist []int8
 	bb := uint64(b)
 	for bb != 0 {
 		square := bits.TrailingZeros64(bb)
-		squareslist = append(squareslist, square)
+		squareslist = append(squareslist, int8(square))
 
 		bb &= bb - 1
 	}
@@ -1336,7 +1245,7 @@ func GenRookMoves(b *Board, pieces Bitboard) moves.MoveList {
 	occupied := b.FilledSquares
 	moveList := moves.NewMoveList()
 	for pieces != 0 {
-		square := bits.TrailingZeros64(uint64(pieces))
+		var square int8 = int8(bits.TrailingZeros64(uint64(pieces)))
 		pieces &= pieces - 1
 
 		// Use the magic lookup table directly
@@ -1348,7 +1257,7 @@ func GenRookMoves(b *Board, pieces Bitboard) moves.MoveList {
 		legalMoves := attacks &^ friendly
 
 		for legalMoves != 0 {
-			target := bits.TrailingZeros64(uint64(legalMoves))
+			var target int8 = int8(bits.TrailingZeros64(uint64(legalMoves)))
 			legalMoves &= legalMoves - 1
 
 			moveList.Add(moves.NewMove(square, target, moves.FlagNone))
@@ -1372,7 +1281,7 @@ func GenBishopMoves(b *Board, pieces Bitboard) moves.MoveList {
 	moveList := moves.NewMoveList()
 
 	for pieces != 0 {
-		square := bits.TrailingZeros64(uint64(pieces))
+		var square int8 = int8(bits.TrailingZeros64(uint64(pieces)))
 		pieces &= pieces - 1
 
 		magic := bishopMagics[square]
@@ -1383,7 +1292,7 @@ func GenBishopMoves(b *Board, pieces Bitboard) moves.MoveList {
 		legalMoves := attacks &^ friendly
 
 		for legalMoves != 0 {
-			target := bits.TrailingZeros64(uint64(legalMoves))
+			var target int8 = int8(bits.TrailingZeros64(uint64(legalMoves)))
 			legalMoves &= legalMoves - 1
 			moveList.Add(moves.NewMove(square, target, moves.FlagNone))
 		}
@@ -1405,7 +1314,7 @@ func GenQueenMoves(b *Board, pieces Bitboard) moves.MoveList {
 	moveList := moves.NewMoveList()
 
 	for pieces != 0 {
-		square := bits.TrailingZeros64(uint64(pieces))
+		var square int8 = int8(bits.TrailingZeros64(uint64(pieces)))
 		pieces &= pieces - 1
 
 		// Queen = Rook attacks + Bishop attacks
@@ -1423,7 +1332,7 @@ func GenQueenMoves(b *Board, pieces Bitboard) moves.MoveList {
 		legalMoves := attacks &^ friendly
 
 		for legalMoves != 0 {
-			target := bits.TrailingZeros64(uint64(legalMoves))
+			var target int8 = int8(bits.TrailingZeros64(uint64(legalMoves)))
 			legalMoves &= legalMoves - 1
 			moveList.Add(moves.NewMove(square, target, moves.FlagNone))
 		}
@@ -1470,12 +1379,12 @@ func (b *Board) GenMoves() moves.MoveList {
 		for i, bb := range []Bitboard{b.WKings, b.WQueens, b.WRooks, b.WBishops, b.WKnights, b.WPawns} {
 			switch i {
 			case 0:
-				square := bits.TrailingZeros64(uint64(bb))
+				var square int8 = int8(bits.TrailingZeros64(uint64(bb)))
 				if square < 64 {
 					adjacentking := precomped.King[square] &^ ourpieces
 					after := adjacentking.ToSquares()
 					for _, v := range after {
-						Move := moves.NewMove(square, v, moves.FlagNone)
+						Move := moves.NewMove(square, int8(v), moves.FlagNone)
 						//Move := Move{From: square, To: v}
 						allMoves.Add(Move)
 					}
@@ -1499,7 +1408,7 @@ func (b *Board) GenMoves() moves.MoveList {
 						adjacentknight := precomped.Knight[square] &^ ourpieces
 						after := adjacentknight.ToSquares()
 						for _, v := range after {
-							Move := moves.NewMove(square, v, moves.FlagNone)
+							Move := moves.NewMove(square, int8(v), moves.FlagNone)
 							allMoves.Add(Move)
 						}
 					}
@@ -1509,35 +1418,37 @@ func (b *Board) GenMoves() moves.MoveList {
 				push1pawns := (bb >> 8) &^ b.FilledSquares
 				after := push1pawns.ToSquares()
 				for _, v := range after {
-					from := v + 8
-					to := v
+					var from int8 = int8(v + 8)
+					var to int8 = int8(v)
 					if to <= 7 {
 						allMoves.Add(moves.NewMove(from, to, moves.FlagPromotionKnight))
 						allMoves.Add(moves.NewMove(from, to, moves.FlagPromotionBishop))
 						allMoves.Add(moves.NewMove(from, to, moves.FlagPromotionRook))
 						allMoves.Add(moves.NewMove(from, to, moves.FlagPromotionQueen))
 					} else {
-						Move := moves.NewMove(v+8, v, moves.FlagNone)
+						Move := moves.NewMove(from, to, moves.FlagNone)
 						allMoves.Add(Move)
 					}
 				}
 				push2pawns := ((push1pawns & (WPawnStartRank >> 8)) >> 8) &^ b.FilledSquares
 				after = push2pawns.ToSquares()
 				for _, v := range after {
-					Move := moves.NewMove(v+16, v, moves.FlagNone)
+					Move := moves.NewMove(int8(v+16), int8(v), moves.FlagNone)
 					allMoves.Add(Move)
 				}
 
 				leftcapture := ((bb &^ FileA) >> 9) & opponentpieces
 				after = leftcapture.ToSquares()
 				for _, v := range after {
+					var from int8 = int8(v + 9)
+					var to int8 = int8(v)
 					if v <= 7 { // Promotion rank
-						allMoves.Add(moves.NewMove(v+9, v, moves.FlagPromotionKnight))
-						allMoves.Add(moves.NewMove(v+9, v, moves.FlagPromotionBishop))
-						allMoves.Add(moves.NewMove(v+9, v, moves.FlagPromotionRook))
-						allMoves.Add(moves.NewMove(v+9, v, moves.FlagPromotionQueen))
+						allMoves.Add(moves.NewMove(from, to, moves.FlagPromotionKnight))
+						allMoves.Add(moves.NewMove(from, to, moves.FlagPromotionBishop))
+						allMoves.Add(moves.NewMove(from, to, moves.FlagPromotionRook))
+						allMoves.Add(moves.NewMove(to, to, moves.FlagPromotionQueen))
 					} else {
-						Move := moves.NewMove(v+9, v, moves.FlagNone)
+						Move := moves.NewMove(from, to, moves.FlagNone)
 						allMoves.Add(Move)
 					}
 				}
@@ -1545,13 +1456,15 @@ func (b *Board) GenMoves() moves.MoveList {
 				rightcapture := ((bb &^ FileH) >> 7) & opponentpieces
 				after = rightcapture.ToSquares()
 				for _, v := range after {
+					var from int8 = int8(v + 7)
+					var to int8 = int8(v)
 					if v <= 7 { // Promotion rank
-						allMoves.Add(moves.NewMove(v+7, v, moves.FlagPromotionKnight))
-						allMoves.Add(moves.NewMove(v+7, v, moves.FlagPromotionBishop))
-						allMoves.Add(moves.NewMove(v+7, v, moves.FlagPromotionRook))
-						allMoves.Add(moves.NewMove(v+7, v, moves.FlagPromotionQueen))
+						allMoves.Add(moves.NewMove(from, to, moves.FlagPromotionKnight))
+						allMoves.Add(moves.NewMove(from, to, moves.FlagPromotionBishop))
+						allMoves.Add(moves.NewMove(from, to, moves.FlagPromotionRook))
+						allMoves.Add(moves.NewMove(to, to, moves.FlagPromotionQueen))
 					} else {
-						Move := moves.NewMove(v+7, v, moves.FlagNone)
+						Move := moves.NewMove(from, to, moves.FlagNone)
 						allMoves.Add(Move)
 					}
 				}
@@ -1592,12 +1505,12 @@ func (b *Board) GenMoves() moves.MoveList {
 		for i, bb := range []Bitboard{b.BKings, b.BQueens, b.BRooks, b.BBishops, b.BKnights, b.BPawns} {
 			switch i {
 			case 0:
-				square := bits.TrailingZeros64(uint64(bb))
+				var square int8 = int8(bits.TrailingZeros64(uint64(bb)))
 				if square < 64 {
 					adjacentking := precomped.King[square] &^ ourpieces
 					after := adjacentking.ToSquares()
 					for _, v := range after {
-						Move := moves.NewMove(square, v, moves.FlagNone)
+						Move := moves.NewMove(square, int8(v), moves.FlagNone)
 						allMoves.Add(Move)
 					}
 				}
@@ -1617,7 +1530,7 @@ func (b *Board) GenMoves() moves.MoveList {
 						adjacentknight := precomped.Knight[square] &^ ourpieces
 						after := adjacentknight.ToSquares()
 						for _, v := range after {
-							Move := moves.NewMove(square, v, moves.FlagNone)
+							Move := moves.NewMove(square, int8(v), moves.FlagNone)
 							allMoves.Add(Move)
 						}
 					}
@@ -1627,22 +1540,22 @@ func (b *Board) GenMoves() moves.MoveList {
 				push1pawns := (bb << 8) &^ b.FilledSquares
 				after := push1pawns.ToSquares()
 				for _, v := range after {
-					from := v - 8
-					to := v
+					from := int8(v - 8)
+					to := int8(v)
 					if to >= 56 {
 						allMoves.Add(moves.NewMove(from, to, moves.FlagPromotionKnight))
 						allMoves.Add(moves.NewMove(from, to, moves.FlagPromotionBishop))
 						allMoves.Add(moves.NewMove(from, to, moves.FlagPromotionRook))
 						allMoves.Add(moves.NewMove(from, to, moves.FlagPromotionQueen))
 					} else {
-						Move := moves.NewMove(v-8, v, moves.FlagNone)
+						Move := moves.NewMove(from, to, moves.FlagNone)
 						allMoves.Add(Move)
 					}
 				}
 				push2pawns := ((push1pawns & (BPawnStartRank << 8)) << 8) &^ b.FilledSquares
 				after = push2pawns.ToSquares()
 				for _, v := range after {
-					Move := moves.NewMove(v-16, v, moves.FlagNone)
+					Move := moves.NewMove(int8(v-16), int8(v), moves.FlagNone)
 					allMoves.Add(Move)
 				}
 
@@ -1650,13 +1563,15 @@ func (b *Board) GenMoves() moves.MoveList {
 				leftcapture := ((bb &^ FileH) << 9) & opponentpieces
 				after = leftcapture.ToSquares()
 				for _, v := range after {
-					if v >= 56 { // Promotion rank
-						allMoves.Add(moves.NewMove(v-9, v, moves.FlagPromotionKnight))
-						allMoves.Add(moves.NewMove(v-9, v, moves.FlagPromotionBishop))
-						allMoves.Add(moves.NewMove(v-9, v, moves.FlagPromotionRook))
-						allMoves.Add(moves.NewMove(v-9, v, moves.FlagPromotionQueen))
+					from := int8(v - 9)
+					to := int8(v)
+					if to >= 56 { // Promotion rank
+						allMoves.Add(moves.NewMove(from, to, moves.FlagPromotionKnight))
+						allMoves.Add(moves.NewMove(from, to, moves.FlagPromotionBishop))
+						allMoves.Add(moves.NewMove(from, to, moves.FlagPromotionRook))
+						allMoves.Add(moves.NewMove(from, to, moves.FlagPromotionQueen))
 					} else {
-						Move := moves.NewMove(v-9, v, moves.FlagNone)
+						Move := moves.NewMove(from, to, moves.FlagNone)
 						allMoves.Add(Move)
 					}
 				}
@@ -1664,13 +1579,15 @@ func (b *Board) GenMoves() moves.MoveList {
 				rightcapture := ((bb &^ FileA) << 7) & opponentpieces
 				after = rightcapture.ToSquares()
 				for _, v := range after {
+					from := int8(v - 7)
+					to := int8(v)
 					if v >= 56 { // Promotion rank
-						allMoves.Add(moves.NewMove(v-7, v, moves.FlagPromotionKnight))
-						allMoves.Add(moves.NewMove(v-7, v, moves.FlagPromotionBishop))
-						allMoves.Add(moves.NewMove(v-7, v, moves.FlagPromotionRook))
-						allMoves.Add(moves.NewMove(v-7, v, moves.FlagPromotionQueen))
+						allMoves.Add(moves.NewMove(from, to, moves.FlagPromotionKnight))
+						allMoves.Add(moves.NewMove(from, to, moves.FlagPromotionBishop))
+						allMoves.Add(moves.NewMove(from, to, moves.FlagPromotionRook))
+						allMoves.Add(moves.NewMove(from, to, moves.FlagPromotionQueen))
 					} else {
-						Move := moves.NewMove(v-7, v, moves.FlagNone)
+						Move := moves.NewMove(from, to, moves.FlagNone)
 						allMoves.Add(Move)
 					}
 				}

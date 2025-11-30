@@ -26,7 +26,7 @@ const (
 	FlagPromotionKnight               // 6 << 12 = 24576
 )
 
-func NewMove(from, to int, flags Move) Move {
+func NewMove(from, to int8, flags Move) Move {
 	return Move(from) | Move(to)<<6 | flags
 }
 
@@ -36,12 +36,12 @@ func NewMoveList() MoveList {
 	}
 }
 
-func (m Move) From() int {
-	return int(m & 0x3F) // bits 0-5
+func (m Move) From() int8 {
+	return int8(m & 0x3F) // bits 0-5
 }
 
-func (m Move) To() int {
-	return int((m >> 6) & 0x3F) // bits 6-11
+func (m Move) To() int8 {
+	return int8((m >> 6) & 0x3F) // bits 6-11
 }
 
 func (m Move) Flags() Move {
@@ -61,12 +61,12 @@ func (m Move) IsPromotion() bool {
 	return flags >= FlagPromotionKnight && flags <= FlagPromotionQueen
 }
 
-func (m Move) PromotionPiece() int {
+func (m Move) PromotionPiece() uint8 {
 	//0=none, 1=knight, 2=bishop, 3=rook, 4=queen
 	if !m.IsPromotion() {
 		return 0
 	}
-	return int(m.Flags()>>12) - 2
+	return uint8(m.Flags()>>12) - 2
 }
 
 func (ml *MoveList) Add(move Move) {

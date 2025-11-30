@@ -4,6 +4,8 @@ import (
 	"bot/board"
 	"bot/moves"
 	"fmt"
+	"os"
+	"runtime/pprof"
 	"sort"
 	"time"
 )
@@ -22,9 +24,9 @@ func Perft(b *board.Board, depth int) uint64 {
 	var nodes uint64
 	for i := 0; i < moves.Count; i++ {
 		move := moves.Moves[i]
-		undo := b.PlayMove(move)
+		b.PlayMove(move)
 		nodes += Perft(b, depth-1)
-		b.UndoMove(move, undo)
+		b.UndoMove(move)
 	}
 
 	return nodes
@@ -46,7 +48,7 @@ func PerftDivide(b *board.Board, depth int) uint64 {
 
 	for i := 0; i < Moves.Count; i++ {
 		move := Moves.Moves[i]
-		undo := b.PlayMove(move)
+		b.PlayMove(move)
 
 		var nodes uint64
 		if depth == 1 {
@@ -55,7 +57,8 @@ func PerftDivide(b *board.Board, depth int) uint64 {
 			nodes = Perft(b, depth-1)
 		}
 
-		b.UndoMove(move, undo)
+		b.UndoMove(move)
+		b.UndoCount--
 
 		moveStr := MoveToString(move, b)
 		results = append(results, MoveResult{move, nodes, moveStr})
@@ -109,9 +112,20 @@ func timer(name string) func() {
 
 func main() {
 	defer timer("main")()
+
+	f, err := os.Create("cpu.prof")
+	if err != nil {
+		panic(err)
+	}
+	defer f.Close()
+
+	pprof.StartCPUProfile(f)
+	defer pprof.StopCPUProfile()
 	board.InitMagicBitboards()
-	b := board.Board{}
+	b := board.Board{
+		UndoCount: 0,
+	}
 	b.FromFen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
 
-	fmt.Println(Perft(&b, 5))
+	fmt.Println(Perft(&b, 6))
 }
