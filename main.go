@@ -2,6 +2,7 @@ package main
 
 import (
 	"bot/board"
+	"bot/evaluation"
 	"bot/moves"
 	"fmt"
 	"os"
@@ -58,7 +59,6 @@ func PerftDivide(b *board.Board, depth int) uint64 {
 		}
 
 		b.UndoMove(move)
-		b.UndoCount--
 
 		moveStr := MoveToString(move, b)
 		results = append(results, MoveResult{move, nodes, moveStr})
@@ -81,7 +81,7 @@ func PerftDivide(b *board.Board, depth int) uint64 {
 
 func MoveToString(m moves.Move, b *board.Board) string {
 	files := "abcdefgh"
-	ranks := "12345678"
+	ranks := "87654321"
 
 	from := fmt.Sprintf("%c%c", files[m.From()%8], ranks[m.From()/8])
 	to := fmt.Sprintf("%c%c", files[m.To()%8], ranks[m.To()/8])
@@ -125,7 +125,14 @@ func main() {
 	b := board.Board{
 		UndoCount: 0,
 	}
-	b.FromFen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
+	b.FromFen("5rk1/2q3p1/p1b1p2p/1p1p3P/5r1Q/2N3R1/PPP2PP1/5RK1 w - - 4 23")
 
-	fmt.Println(Perft(&b, 6))
+	//fmt.Println(Perft(&b, 6))
+	move := evaluation.FindBestMove(&b, 6)
+	fmt.Println(MoveToString(move, &b))
+
+	//fmt.Println(MoveToString(moves.NewMove(51, 59, moves.FlagPromotionKnight), &b))
+	//b.PlayMove(move)
+	//b.DebugPrint()
+	//evaluation.BestMove(&b)
 }

@@ -640,6 +640,9 @@ func (b *Board) Moves() moves.MoveList {
 
 func (b *Board) PlayMove(move moves.Move) {
 	movingpiece := b.PieceAt(move.From())
+	if movingpiece == -1 {
+		fmt.Println(move)
+	}
 	targetpiece := b.PieceAt(move.To())
 
 	u := &b.UndoStack[b.UndoCount]
