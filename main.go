@@ -16,7 +16,7 @@ func Perft(b *board.Board, depth int) uint64 {
 		return 1
 	}
 
-	moves := b.Moves()
+	moves := b.Moves(false)
 
 	if depth == 1 {
 		return uint64(moves.Count)
@@ -34,7 +34,7 @@ func Perft(b *board.Board, depth int) uint64 {
 }
 
 func PerftDivide(b *board.Board, depth int) uint64 {
-	Moves := b.Moves()
+	Moves := b.Moves(false)
 	var totalNodes uint64
 
 	type MoveResult struct {
@@ -125,10 +125,10 @@ func main() {
 	b := board.Board{
 		UndoCount: 0,
 	}
-	b.FromFen("5rk1/2q3p1/p1b1p2p/1p1p3P/5r1Q/2N3R1/PPP2PP1/5RK1 w - - 4 23")
+	b.FromFen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
 
 	//fmt.Println(Perft(&b, 6))
-	move := evaluation.FindBestMove(&b, 6)
+	move := evaluation.FindBestMove(&b, 7)
 	fmt.Println(MoveToString(move, &b))
 
 	//fmt.Println(MoveToString(moves.NewMove(51, 59, moves.FlagPromotionKnight), &b))

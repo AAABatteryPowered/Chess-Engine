@@ -3,14 +3,12 @@ package evaluation
 import (
 	"bot/board"
 	"bot/moves"
-	"fmt"
 	"math"
 	"math/bits"
-	"math/rand"
 )
 
-var pieceValues [5]float32 = [5]float32{900, 500, 320, 301, 100}
-var PieceSquareTables = [6][64]float32{
+var pieceValues [5]int = [5]int{900, 500, 320, 301, 100}
+var PieceSquareTables = [6][64]int{
 	// Pawn
 	{
 		0, 0, 0, 0, 0, 0, 0, 0,
@@ -79,13 +77,15 @@ var PieceSquareTables = [6][64]float32{
 	},
 }
 
+//var TranspositionTables
+
 var edges board.Bitboard = 0xff818181818181ff
 var center board.Bitboard = 0x1818000000
 
 //var kingHeatMap [64]int =
 
-func Evaluate(b *board.Board) float64 {
-	var score float32 = 0
+func Evaluate(b *board.Board) int {
+	var score int = 0
 
 	for i := 0; i < 5; i++ {
 		for bb := *b.AllBitboards[i]; bb != 0; bb &= bb - 1 {
@@ -103,7 +103,7 @@ func Evaluate(b *board.Board) float64 {
 		}
 	}
 
-	return float64(score)
+	return score
 }
 
 func evaluatePiecePositions(b *board.Board) int {
@@ -121,73 +121,73 @@ func evaluatePiecePositions(b *board.Board) int {
 	return score
 }
 
-func BestMove(b *board.Board) {
-	Moves := b.Moves()
+func Search(b *board.Board, depth int, alpha int, beta int) int {
+	if depth == 0 {
+		return SearchAllCaptures(b, alpha, beta)
+	}
 
-	fmt.Println(Moves.Moves[rand.Intn(Moves.Count)])
+	moves := b.Moves(false)
+	for i := 0; i < moves.Count; i++ {
+		move := moves.Moves[i]
+
+		b.PlayMove(move)
+		value := -Search(b, depth-1, -beta, -alpha)
+		b.UndoMove(move)
+
+		if value >= beta {
+			return value
+		}
+
+		alpha = max(alpha, value)
+	}
+
+	return alpha
 }
 
-func MiniMax(b *board.Board, depth int, alpha float64, beta float64, maximising bool) float64 {
-	if depth == 0 {
-		return Evaluate(b)
+func SearchAllCaptures(b *board.Board, alpha int, beta int) int {
+	eval := Evaluate(b)
+	if eval >= beta {
+		return beta
+	}
+	alpha = max(alpha, eval)
+
+	capturemoves := b.Moves(true)
+	for i := 0; i < capturemoves.Count; i++ {
+		move := capturemoves.Moves[i]
+
+		b.PlayMove(move)
+		value := -SearchAllCaptures(b, -beta, -alpha)
+		b.UndoMove(move)
+
+		if value >= beta {
+			return value
+		}
+
+		alpha = max(alpha, value)
 	}
 
-	moves := b.Moves()
-
-	if maximising {
-		value := math.Inf(-1)
-		for i := 0; i < moves.Count; i++ {
-			move := moves.Moves[i]
-			b.PlayMove(move)
-			value = math.Max(value, float64(MiniMax(b, depth-1, alpha, beta, false)))
-			b.UndoMove(move)
-			//b.UndoCount--
-			alpha = math.Max(alpha, value)
-			if alpha >= beta {
-				break
-			}
-
-		}
-		return value
-	} else {
-		value := math.Inf(1)
-		for i := 0; i < moves.Count; i++ {
-			move := moves.Moves[i]
-			b.PlayMove(move)
-			value = min(value, MiniMax(b, depth-1, alpha, beta, true))
-			b.UndoMove(move)
-			//b.UndoCount--
-			beta = math.Min(beta, value)
-			if alpha >= beta {
-				break
-			}
-
-		}
-		return value
-	}
+	return alpha
 }
 
 func FindBestMove(b *board.Board, depth int) moves.Move {
-	var bestMove moves.Move
-	bestValue := math.Inf(-1)
-	alpha := math.Inf(-1)
-	beta := math.Inf(1)
 
-	moves := b.Moves()
+	var bestMove moves.Move
+	bestValue := math.MinInt
+
+	moves := b.Moves(false)
+	//OrderMoves(b, &moves)
 
 	for i := 0; i < moves.Count; i++ {
 		move := moves.Moves[i]
 
 		b.PlayMove(move)
-		moveValue := MiniMax(b, depth-1, alpha, beta, false) // false because opponent's turn
+		moveValue := -Search(b, depth-1, math.MinInt, math.MaxInt)
 		b.UndoMove(move)
 
 		if moveValue > bestValue {
 			bestValue = moveValue
 			bestMove = move
 		}
-
-		alpha = math.Max(alpha, bestValue)
 	}
 
 	return bestMove

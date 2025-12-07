@@ -600,7 +600,7 @@ func IsKingAttacked(b *Board) (bool, []Move) {
 	return false, allMoves
 }*/
 
-func (b *Board) Moves() moves.MoveList {
+func (b *Board) Moves(captures bool) moves.MoveList {
 	ourmoves := b.GenMoves()
 	var filteredmoves moves.MoveList = moves.NewMoveList()
 	/*incheck := b.IsKingAttacked()
@@ -610,11 +610,18 @@ func (b *Board) Moves() moves.MoveList {
 	originalturn := b.Turn
 	for i := 0; i < ourmoves.Count; i++ {
 		ourmove := ourmoves.Moves[i]
+		capture := b.PieceAt(ourmove.To())
 		b.PlayMove(ourmove)
 		b.Turn = originalturn
 		stillincheck := b.IsKingAttacked()
 		if !stillincheck {
-			filteredmoves.Add(ourmove)
+			if captures {
+				if capture != -1 {
+					filteredmoves.Add(ourmove)
+				}
+			} else {
+				filteredmoves.Add(ourmove)
+			}
 		}
 		b.UndoMove(ourmove)
 	}
@@ -800,6 +807,17 @@ func (b *Board) UndoMove(move moves.Move) {
 
 	b.EnPassantTarget = u.enPassantOld
 
+	if u.promotion != 0 {
+		promotedIndex := u.promotion
+		if !u.turnOld {
+			promotedIndex += 6
+		}
+
+		allbb[promotedIndex].Clear(u.to)
+
+		allbb[u.movingPiece].Set(u.from)
+	}
+
 	b.FilledSquares.Clear(u.to)
 
 	allbb[u.movingPiece].Clear(u.to)
@@ -811,17 +829,6 @@ func (b *Board) UndoMove(move moves.Move) {
 
 	allbb[u.movingPiece].Set(u.from)
 	b.FilledSquares.Set(u.from)
-
-	if u.promotion != 0 {
-		promotedIndex := u.promotion
-		if !u.turnOld {
-			promotedIndex += 6
-		}
-
-		allbb[promotedIndex].Clear(u.to)
-
-		allbb[u.movingPiece].Set(u.from)
-	}
 
 	// handle en-passant capture
 	if move.IsEnPassant() {
@@ -1449,7 +1456,7 @@ func (b *Board) GenMoves() moves.MoveList {
 						allMoves.Add(moves.NewMove(from, to, moves.FlagPromotionKnight))
 						allMoves.Add(moves.NewMove(from, to, moves.FlagPromotionBishop))
 						allMoves.Add(moves.NewMove(from, to, moves.FlagPromotionRook))
-						allMoves.Add(moves.NewMove(to, to, moves.FlagPromotionQueen))
+						allMoves.Add(moves.NewMove(from, to, moves.FlagPromotionQueen))
 					} else {
 						Move := moves.NewMove(from, to, moves.FlagNone)
 						allMoves.Add(Move)
@@ -1465,7 +1472,7 @@ func (b *Board) GenMoves() moves.MoveList {
 						allMoves.Add(moves.NewMove(from, to, moves.FlagPromotionKnight))
 						allMoves.Add(moves.NewMove(from, to, moves.FlagPromotionBishop))
 						allMoves.Add(moves.NewMove(from, to, moves.FlagPromotionRook))
-						allMoves.Add(moves.NewMove(to, to, moves.FlagPromotionQueen))
+						allMoves.Add(moves.NewMove(from, to, moves.FlagPromotionQueen))
 					} else {
 						Move := moves.NewMove(from, to, moves.FlagNone)
 						allMoves.Add(Move)
