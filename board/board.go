@@ -58,6 +58,7 @@ type Board struct {
 	BCastleK bool
 
 	EnPassantTarget int8
+	Mailbox         [64]int8
 
 	AllBitboards [12]*Bitboard
 	UndoStack    [64]Undo
@@ -158,6 +159,10 @@ func (b *Board) FromFen(s string) {
 		&b.BPawns,
 	}
 
+	for i := 0; i < 64; i++ {
+		b.Mailbox[i] = -1
+	}
+
 	var posPointer int8 = 0
 	var subdata string
 outerLoop:
@@ -169,50 +174,62 @@ outerLoop:
 		case 'K':
 			b.WKings.Set(posPointer)
 			b.FilledSquares.Set(posPointer)
+			b.Mailbox[posPointer] = 0
 			posPointer += 1
 		case 'Q':
 			b.WQueens.Set(posPointer)
 			b.FilledSquares.Set(posPointer)
+			b.Mailbox[posPointer] = 1
 			posPointer += 1
 		case 'R':
 			b.WRooks.Set(posPointer)
 			b.FilledSquares.Set(posPointer)
+			b.Mailbox[posPointer] = 2
 			posPointer += 1
 		case 'B':
 			b.WBishops.Set(posPointer)
 			b.FilledSquares.Set(posPointer)
+			b.Mailbox[posPointer] = 3
 			posPointer += 1
 		case 'N':
 			b.WKnights.Set(posPointer)
 			b.FilledSquares.Set(posPointer)
+			b.Mailbox[posPointer] = 4
 			posPointer += 1
 		case 'P':
 			b.WPawns.Set(posPointer)
 			b.FilledSquares.Set(posPointer)
+			b.Mailbox[posPointer] = 5
 			posPointer += 1
 		case 'k':
 			b.BKings.Set(posPointer)
 			b.FilledSquares.Set(posPointer)
+			b.Mailbox[posPointer] = 6
 			posPointer += 1
 		case 'q':
 			b.BQueens.Set(posPointer)
 			b.FilledSquares.Set(posPointer)
+			b.Mailbox[posPointer] = 7
 			posPointer += 1
 		case 'r':
 			b.BRooks.Set(posPointer)
 			b.FilledSquares.Set(posPointer)
+			b.Mailbox[posPointer] = 8
 			posPointer += 1
 		case 'b':
 			b.BBishops.Set(posPointer)
 			b.FilledSquares.Set(posPointer)
+			b.Mailbox[posPointer] = 9
 			posPointer += 1
 		case 'n':
 			b.BKnights.Set(posPointer)
 			b.FilledSquares.Set(posPointer)
+			b.Mailbox[posPointer] = 10
 			posPointer += 1
 		case 'p':
 			b.BPawns.Set(posPointer)
 			b.FilledSquares.Set(posPointer)
+			b.Mailbox[posPointer] = 11
 			posPointer += 1
 
 		case ' ':
@@ -276,68 +293,23 @@ func (b *Board) Copy() *Board {
 }
 
 func (b *Board) PieceAt(square int8) int8 {
-	if !b.FilledSquares.IsSet(square) {
-		return -1
-	}
-
-	if b.WPawns.IsSet(square) {
-		return 5
-	}
-	if b.BPawns.IsSet(square) {
-		return 11
-	}
-
-	if b.WKnights.IsSet(square) {
-		return 4
-	}
-	if b.BKnights.IsSet(square) {
-		return 10
-	}
-
-	if b.WBishops.IsSet(square) {
-		return 3
-	}
-	if b.BBishops.IsSet(square) {
-		return 9
-	}
-
-	if b.WRooks.IsSet(square) {
-		return 2
-	}
-	if b.BRooks.IsSet(square) {
-		return 8
-	}
-
-	if b.WQueens.IsSet(square) {
-		return 1
-	}
-	if b.BQueens.IsSet(square) {
-		return 7
-	}
-
-	if b.WKings.IsSet(square) {
-		return 0
-	}
-	if b.BKings.IsSet(square) {
-		return 6
-	}
-
-	return -1
+	return b.Mailbox[square]
 }
 
 func (b Bitboard) ToSquares() []int {
 	bb := uint64(b)
-	count := bits.OnesCount64(bb)
 
-	squares := make([]int, 0, count)
+	var squares [11]int // max 11 pieces of this type
+	i := 0
 
 	for bb != 0 {
 		sq := bits.TrailingZeros64(bb)
-		squares = append(squares, sq)
+		squares[i] = sq
+		i++
 		bb &= bb - 1
 	}
 
-	return squares
+	return squares[:i]
 }
 
 func (b *Board) DebugPrint() {
@@ -507,6 +479,7 @@ func abs(x int) int {
 	}
 	return x
 }
+
 func (b *Board) IsKingAttacked() bool {
 	var kingSq int
 	var occ = b.FilledSquares
@@ -610,7 +583,7 @@ func (b *Board) Moves(captures bool) moves.MoveList {
 	originalturn := b.Turn
 	for i := 0; i < ourmoves.Count; i++ {
 		ourmove := ourmoves.Moves[i]
-		capture := b.PieceAt(ourmove.To())
+		capture := b.Mailbox[ourmove.To()]
 		b.PlayMove(ourmove)
 		b.Turn = originalturn
 		stillincheck := b.IsKingAttacked()
@@ -646,11 +619,11 @@ func (b *Board) Moves(captures bool) moves.MoveList {
 }*/
 
 func (b *Board) PlayMove(move moves.Move) {
-	movingpiece := b.PieceAt(move.From())
+	movingpiece := b.Mailbox[move.From()]
 	if movingpiece == -1 {
 		fmt.Println(move)
 	}
-	targetpiece := b.PieceAt(move.To())
+	targetpiece := b.Mailbox[move.To()]
 
 	u := &b.UndoStack[b.UndoCount]
 	u.from = move.From()
@@ -667,6 +640,7 @@ func (b *Board) PlayMove(move moves.Move) {
 	b.UndoCount++
 
 	b.FilledSquares.Clear(move.From())
+	b.Mailbox[move.From()] = -1
 	b.EnPassantTarget = -1
 	castling := move.IsCastling()
 	allbb := &b.AllBitboards
@@ -677,6 +651,9 @@ func (b *Board) PlayMove(move moves.Move) {
 			b.FilledSquares.Clear(move.To())
 			b.FilledSquares.Set(58)
 			b.FilledSquares.Set(59)
+			b.Mailbox[move.To()] = -1
+			b.Mailbox[58] = 0
+			b.Mailbox[59] = 2
 			allbb[0].Clear(move.From()) // white king
 			allbb[0].Set(58)
 			allbb[2].Clear(move.To()) // white rook
@@ -685,6 +662,9 @@ func (b *Board) PlayMove(move moves.Move) {
 			b.FilledSquares.Clear(move.To())
 			b.FilledSquares.Set(61)
 			b.FilledSquares.Set(62)
+			b.Mailbox[move.To()] = -1
+			b.Mailbox[61] = 2
+			b.Mailbox[62] = 0
 			allbb[0].Clear(move.From()) // white king
 			allbb[0].Set(62)
 			allbb[2].Clear(move.To()) // white rook
@@ -693,6 +673,9 @@ func (b *Board) PlayMove(move moves.Move) {
 			b.FilledSquares.Clear(move.To())
 			b.FilledSquares.Set(2)
 			b.FilledSquares.Set(3)
+			b.Mailbox[move.To()] = -1
+			b.Mailbox[2] = 6
+			b.Mailbox[3] = 8
 			allbb[6].Clear(move.From())
 			allbb[6].Set(2)
 			allbb[8].Clear(move.To())
@@ -701,6 +684,9 @@ func (b *Board) PlayMove(move moves.Move) {
 			b.FilledSquares.Clear(move.To())
 			b.FilledSquares.Set(5)
 			b.FilledSquares.Set(6)
+			b.Mailbox[move.To()] = -1
+			b.Mailbox[5] = 8
+			b.Mailbox[6] = 6
 			allbb[6].Clear(move.From())
 			allbb[6].Set(6)
 			allbb[8].Clear(move.To())
@@ -708,14 +694,17 @@ func (b *Board) PlayMove(move moves.Move) {
 		}
 	} else if move.IsPromotion() {
 		b.FilledSquares.Set(move.To())
+
 		allbb[movingpiece].Clear(move.From())
 		if targetpiece != -1 {
 			allbb[targetpiece].Clear(move.To())
 		}
 		if b.Turn {
 			allbb[move.PromotionPiece()].Set(move.To())
+			b.Mailbox[move.To()] = int8(move.PromotionPiece())
 		} else {
 			allbb[move.PromotionPiece()+6].Set(move.To())
+			b.Mailbox[move.To()] = int8(move.PromotionPiece() + 6)
 		}
 	} else if move.IsEnPassant() && movingpiece != -1 {
 		allbb[movingpiece].Clear(move.From())
@@ -724,13 +713,16 @@ func (b *Board) PlayMove(move moves.Move) {
 			allbb[targetpiece].Clear(move.To())
 		}
 		allbb[movingpiece].Set(move.To())
+		b.Mailbox[move.To()] = movingpiece
 
 		if b.Turn {
 			b.FilledSquares.Clear(move.To() + 8)
 			allbb[11].Clear(move.To() + 8)
+			b.Mailbox[move.To()+8] = -1
 		} else {
 			b.FilledSquares.Clear(move.To() - 8)
 			allbb[5].Clear(move.To() - 8)
+			b.Mailbox[move.To()+8] = -1
 		}
 	} else if targetpiece > 5 {
 		// piece is black
@@ -739,11 +731,13 @@ func (b *Board) PlayMove(move moves.Move) {
 			allbb[movingpiece].Clear(move.From())
 			allbb[targetpiece].Clear(move.To())
 			allbb[movingpiece].Set(move.To())
+			b.Mailbox[move.To()] = movingpiece
 		}
 	} else if targetpiece == -1 {
 		b.FilledSquares.Set(move.To())
 		allbb[movingpiece].Clear(move.From())
 		allbb[movingpiece].Set(move.To())
+		b.Mailbox[move.To()] = movingpiece
 
 		if b.Turn && movingpiece == 5 {
 			if move.From()-move.To() == 16 {
@@ -761,6 +755,7 @@ func (b *Board) PlayMove(move moves.Move) {
 			allbb[movingpiece].Clear(move.From())
 			allbb[targetpiece].Clear(move.To())
 			allbb[movingpiece].Set(move.To())
+			b.Mailbox[move.To()] = movingpiece
 		}
 	}
 
@@ -814,30 +809,37 @@ func (b *Board) UndoMove(move moves.Move) {
 		}
 
 		allbb[promotedIndex].Clear(u.to)
+		b.Mailbox[u.to] = -1
 
 		allbb[u.movingPiece].Set(u.from)
+		b.Mailbox[u.from] = u.movingPiece
 	}
 
 	b.FilledSquares.Clear(u.to)
+	b.Mailbox[u.to] = -1
 
 	allbb[u.movingPiece].Clear(u.to)
 
 	if u.capturedPiece != -1 {
 		allbb[u.capturedPiece].Set(u.to)
 		b.FilledSquares.Set(u.to)
+		b.Mailbox[u.to] = u.capturedPiece
 	}
 
 	allbb[u.movingPiece].Set(u.from)
 	b.FilledSquares.Set(u.from)
+	b.Mailbox[u.from] = u.movingPiece
 
 	// handle en-passant capture
 	if move.IsEnPassant() {
 		if u.turnOld { // white moved
 			allbb[11].Set(u.to + 8)
 			b.FilledSquares.Set(u.to + 8)
+			b.Mailbox[u.to+8] = 11
 		} else { // black moved
 			allbb[5].Set(u.to - 8)
 			b.FilledSquares.Set(u.to - 8)
+			b.Mailbox[u.to-8] = 5
 		}
 	}
 
@@ -855,6 +857,10 @@ func (b *Board) UndoMove(move moves.Move) {
 		b.FilledSquares.Set(60)
 		b.FilledSquares.Set(56)
 
+		b.Mailbox[58] = -1
+		b.Mailbox[59] = -1
+		b.Mailbox[60] = 0
+		b.Mailbox[56] = 2
 	case 63:
 		allbb[0].Clear(62)
 		allbb[2].Clear(61)
@@ -864,6 +870,11 @@ func (b *Board) UndoMove(move moves.Move) {
 		b.FilledSquares.Clear(61)
 		b.FilledSquares.Set(60)
 		b.FilledSquares.Set(63)
+
+		b.Mailbox[61] = -1
+		b.Mailbox[62] = -1
+		b.Mailbox[60] = 0
+		b.Mailbox[63] = 2
 
 	case 0:
 		allbb[6].Clear(2)
@@ -875,6 +886,11 @@ func (b *Board) UndoMove(move moves.Move) {
 		b.FilledSquares.Set(4)
 		b.FilledSquares.Set(0)
 
+		b.Mailbox[2] = -1
+		b.Mailbox[3] = -1
+		b.Mailbox[4] = 6
+		b.Mailbox[0] = 8
+
 	case 7:
 		allbb[6].Clear(6)
 		allbb[8].Clear(5)
@@ -884,6 +900,10 @@ func (b *Board) UndoMove(move moves.Move) {
 		b.FilledSquares.Clear(5)
 		b.FilledSquares.Set(4)
 		b.FilledSquares.Set(7)
+		b.Mailbox[5] = -1
+		b.Mailbox[6] = -1
+		b.Mailbox[4] = 6
+		b.Mailbox[7] = 8
 	}
 }
 

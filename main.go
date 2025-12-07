@@ -2,7 +2,6 @@ package main
 
 import (
 	"bot/board"
-	"bot/evaluation"
 	"bot/moves"
 	"fmt"
 	"os"
@@ -127,9 +126,10 @@ func main() {
 	}
 	b.FromFen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
 
-	//fmt.Println(Perft(&b, 6))
-	move := evaluation.FindBestMove(&b, 7)
-	fmt.Println(MoveToString(move, &b))
+	//fmt.Println(b.Mailbox)
+	fmt.Println(Perft(&b, 6))
+	//move := evaluation.FindBestMove(&b, 7)
+	//fmt.Println(MoveToString(move, &b))
 
 	//fmt.Println(MoveToString(moves.NewMove(51, 59, moves.FlagPromotionKnight), &b))
 	//b.PlayMove(move)
