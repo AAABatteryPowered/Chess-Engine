@@ -4,9 +4,14 @@ import (
 	"bot/moves"
 	"fmt"
 	"math/bits"
+	"math/rand"
 	"strconv"
 	"strings"
 )
+
+// --------------------
+// Board and Main Types
+// --------------------
 
 const (
 	FileA  Bitboard = 0x0101010101010101
@@ -64,6 +69,9 @@ type Board struct {
 	UndoStack    [64]Undo
 	UndoCount    int
 
+	Hash            Bitboard
+	PositionHistory map[Bitboard]int
+
 	HalfMoves int
 	FullMoves int
 
@@ -77,27 +85,11 @@ type preCompTables struct {
 	Pawn   [64]Bitboard
 }
 
-/*
-type Move struct {
-	From      int
-	To        int
-	Castle    int
-	EnPassant bool
-	Promotion int
-}*/
+// --------------------
+// Bitboard Functions
+// --------------------
 
 type Bitboard uint64
-
-func algebraicToSquare(notation string) int8 {
-	if len(notation) != 2 {
-		return -1
-	}
-
-	file := int(notation[0] - 'a')
-	rank := int(notation[1] - '1')
-
-	return int8(rank*8 + file)
-}
 
 func (b *Bitboard) Set(pos int8) {
 	*b |= 1 << pos
@@ -111,6 +103,56 @@ func (b *Bitboard) Toggle(pos int8) {
 	*b ^= 1 << pos
 }
 
+func (b Bitboard) IsSet(pos int8) bool {
+	return (b>>pos)&1 == 1
+}
+
+func (b Bitboard) DebugPrint() {
+	for rank := 7; rank >= 0; rank-- {
+		for file := 0; file < 8; file++ {
+			square := rank*8 + file
+			if (b>>square)&1 == 1 {
+				fmt.Print("1 ")
+			} else {
+				fmt.Print("0 ")
+			}
+		}
+		fmt.Println()
+	}
+}
+
+func (b Bitboard) ToSquares() []int {
+	bb := uint64(b)
+
+	var squares [11]int // max 11 pieces of this type
+	i := 0
+
+	for bb != 0 {
+		sq := bits.TrailingZeros64(bb)
+		squares[i] = sq
+		i++
+		bb &= bb - 1
+	}
+
+	return squares[:i]
+}
+
+func TrailingZerosLoop(b Bitboard) []int8 {
+	var squareslist []int8
+	bb := uint64(b)
+	for bb != 0 {
+		square := bits.TrailingZeros64(bb)
+		squareslist = append(squareslist, int8(square))
+
+		bb &= bb - 1
+	}
+	return squareslist
+}
+
+// --------------------
+// Board Helper Functions
+// --------------------
+
 func (b *Board) Pieces() (Bitboard, Bitboard) {
 	if !b.Turn {
 		return b.BKings | b.BQueens | b.BRooks | b.BBishops | b.BKnights | b.BPawns, b.WKings | b.WQueens | b.WRooks | b.WBishops | b.WKnights | b.WPawns
@@ -119,27 +161,8 @@ func (b *Board) Pieces() (Bitboard, Bitboard) {
 	}
 }
 
-func (b Bitboard) IsSet(pos int8) bool {
-	return (b>>pos)&1 == 1
-}
-
 func (b *Board) SetTurn(t bool) {
 	b.Turn = t
-}
-
-func notationToSquare(notation string) int8 {
-	if len(notation) != 2 {
-		return -1
-	}
-
-	file := notation[0] - 'a'
-	rank := notation[1] - '1'
-
-	if file < 0 || file > 7 || rank < 0 || rank > 7 {
-		return -1
-	}
-
-	return int8(rank)*8 + int8(file)
 }
 
 func (b *Board) FromFen(s string) {
@@ -162,6 +185,8 @@ func (b *Board) FromFen(s string) {
 	for i := 0; i < 64; i++ {
 		b.Mailbox[i] = -1
 	}
+
+	b.Hash = CalculateHash(b)
 
 	var posPointer int8 = 0
 	var subdata string
@@ -296,22 +321,6 @@ func (b *Board) PieceAt(square int8) int8 {
 	return b.Mailbox[square]
 }
 
-func (b Bitboard) ToSquares() []int {
-	bb := uint64(b)
-
-	var squares [11]int // max 11 pieces of this type
-	i := 0
-
-	for bb != 0 {
-		sq := bits.TrailingZeros64(bb)
-		squares[i] = sq
-		i++
-		bb &= bb - 1
-	}
-
-	return squares[:i]
-}
-
 func (b *Board) DebugPrint() {
 	var finalstr string
 	newlinesadded := 0
@@ -363,40 +372,86 @@ func (b *Board) DebugPrint() {
 	fmt.Println(finalstr)
 }
 
-func (b Bitboard) DebugPrint() {
-	for rank := 7; rank >= 0; rank-- {
-		for file := 0; file < 8; file++ {
-			square := rank*8 + file
-			if (b>>square)&1 == 1 {
-				fmt.Print("1 ")
-			} else {
-				fmt.Print("0 ")
-			}
+func notationToSquare(notation string) int8 {
+	if len(notation) != 2 {
+		return -1
+	}
+
+	file := notation[0] - 'a'
+	rank := notation[1] - '1'
+
+	if file < 0 || file > 7 || rank < 0 || rank > 7 {
+		return -1
+	}
+
+	return int8(rank)*8 + int8(file)
+}
+
+// --------------------
+// Miscellaneous
+// --------------------
+
+func abs(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
+}
+
+// ---------------
+// Zobrist Hashing
+// ---------------
+
+var ZobristPieces [12][64]Bitboard
+
+var ZobristBlackToMove Bitboard
+
+var ZobristCastling [4]Bitboard
+
+var ZobristEnPassant [8]Bitboard
+
+func InitZobrist() {
+	rng := rand.New(rand.NewSource(123456789))
+	for piece := 0; piece < 12; piece++ {
+		for square := 0; square < 64; square++ {
+			ZobristPieces[piece][square] = Bitboard(rng.Uint64())
 		}
-		fmt.Println()
+	}
+
+	ZobristBlackToMove = Bitboard(rng.Uint64())
+
+	for i := 0; i < 4; i++ {
+		ZobristCastling[i] = Bitboard(rng.Uint64())
+	}
+
+	for i := 0; i < 8; i++ {
+		ZobristEnPassant[i] = Bitboard(rng.Uint64())
 	}
 }
 
-/*func (b *Board) FollowRay(turn bool, piecetype int, direction int, recurringmoves *[]Move) *[]Move {
-	var raymoves []Move = *recurringmoves
-	if recurringmoves == nil {
-		raymoves = make([]Move, 1)
-	}
+func CalculateHash(b *Board) Bitboard {
+	hash := Bitboard(0)
 
-	if turn {
-		if piecetype == 1 {
-			if direction == 1 {
-				for (b.WRooks << 8 &^ b.FilledSquares) > 0 {
-					b.WRooks = b.WRooks << 8 &^ b.FilledSquares
-					append(raymoves)
-					b.FollowRay(turn, piecetype, direction, &raymoves)
-				}
-			}
+	for pieceType := 0; pieceType < 12; pieceType++ {
+		bitboard := *b.AllBitboards[pieceType]
+
+		for bitboard != 0 {
+			square := bits.TrailingZeros64(uint64(bitboard))
+			hash ^= ZobristPieces[pieceType][square]
+			bitboard &= bitboard - 1
 		}
 	}
 
-	return &raymoves
-}*/
+	if !b.Turn {
+		hash ^= ZobristBlackToMove
+	}
+
+	return hash
+}
+
+// -----------
+// Board Logic
+// -----------
 
 func (b *Board) IsSquareAttacked(square int) bool {
 	occ := b.FilledSquares
@@ -473,13 +528,6 @@ func (b *Board) IsSquareAttacked(square int) bool {
 	return false
 }
 
-func abs(x int) int {
-	if x < 0 {
-		return -x
-	}
-	return x
-}
-
 func (b *Board) IsKingAttacked() bool {
 	var kingSq int
 	var occ = b.FilledSquares
@@ -549,30 +597,6 @@ func (b *Board) IsKingAttacked() bool {
 	return false
 }
 
-/*
-func IsKingAttacked(b *Board) (bool, []Move) {
-	nextturnboard := *b
-	nextturnboard.SetTurn(!b.Turn)
-	allMoves := nextturnboard.GenMoves()
-
-	var kingboard Bitboard
-
-	if b.Turn {
-		kingboard = b.WKings
-	} else {
-		kingboard = b.BKings
-	}
-
-	for _, move := range allMoves {
-		tosquares := kingboard.ToSquares()
-		if move.To == tosquares[0] {
-			return true, allMoves
-		}
-	}
-
-	return false, allMoves
-}*/
-
 func (b *Board) Moves(captures bool) moves.MoveList {
 	ourmoves := b.GenMoves()
 	var filteredmoves moves.MoveList = moves.NewMoveList()
@@ -601,23 +625,6 @@ func (b *Board) Moves(captures bool) moves.MoveList {
 	return filteredmoves
 }
 
-/*func (b *Board) Moves() []Move {
-	ourmoves := b.GenMoves()
-	var filteredmoves []Move
-
-	for _, ourmove := range ourmoves {
-		var copyboard *Board = &Board{}
-		*copyboard = *b
-		copyboard.PlayMove(ourmove)
-		stillincheck, _ := IsKingAttacked(copyboard)
-		if !stillincheck {
-			filteredmoves = append(filteredmoves, ourmove)
-		}
-	}
-
-	return filteredmoves
-}*/
-
 func (b *Board) PlayMove(move moves.Move) {
 	movingpiece := b.Mailbox[move.From()]
 	if movingpiece == -1 {
@@ -644,6 +651,9 @@ func (b *Board) PlayMove(move moves.Move) {
 	b.EnPassantTarget = -1
 	castling := move.IsCastling()
 	allbb := &b.AllBitboards
+
+	b.Hash ^= ZobristPieces[movingpiece][u.from]
+
 	if castling {
 		switch move.To() {
 		case 56:
@@ -658,6 +668,10 @@ func (b *Board) PlayMove(move moves.Move) {
 			allbb[0].Set(58)
 			allbb[2].Clear(move.To()) // white rook
 			allbb[2].Set(59)
+
+			b.Hash ^= ZobristPieces[0][58]
+			b.Hash ^= ZobristPieces[2][59]
+			b.Hash ^= ZobristPieces[u.capturedPiece][u.to]
 		case 63:
 			b.FilledSquares.Clear(move.To())
 			b.FilledSquares.Set(61)
@@ -669,6 +683,10 @@ func (b *Board) PlayMove(move moves.Move) {
 			allbb[0].Set(62)
 			allbb[2].Clear(move.To()) // white rook
 			allbb[2].Set(61)
+
+			b.Hash ^= ZobristPieces[0][62]
+			b.Hash ^= ZobristPieces[2][61]
+			b.Hash ^= ZobristPieces[u.capturedPiece][u.to]
 		case 0:
 			b.FilledSquares.Clear(move.To())
 			b.FilledSquares.Set(2)
@@ -680,6 +698,10 @@ func (b *Board) PlayMove(move moves.Move) {
 			allbb[6].Set(2)
 			allbb[8].Clear(move.To())
 			allbb[8].Set(3)
+
+			b.Hash ^= ZobristPieces[6][2]
+			b.Hash ^= ZobristPieces[8][3]
+			b.Hash ^= ZobristPieces[u.capturedPiece][u.to]
 		case 7:
 			b.FilledSquares.Clear(move.To())
 			b.FilledSquares.Set(5)
@@ -691,6 +713,10 @@ func (b *Board) PlayMove(move moves.Move) {
 			allbb[6].Set(6)
 			allbb[8].Clear(move.To())
 			allbb[8].Set(5)
+
+			b.Hash ^= ZobristPieces[6][6]
+			b.Hash ^= ZobristPieces[8][5]
+			b.Hash ^= ZobristPieces[u.capturedPiece][u.to]
 		}
 	} else if move.IsPromotion() {
 		b.FilledSquares.Set(move.To())
@@ -698,31 +724,38 @@ func (b *Board) PlayMove(move moves.Move) {
 		allbb[movingpiece].Clear(move.From())
 		if targetpiece != -1 {
 			allbb[targetpiece].Clear(move.To())
+			b.Hash ^= ZobristPieces[targetpiece][u.to]
 		}
 		if b.Turn {
 			allbb[move.PromotionPiece()].Set(move.To())
 			b.Mailbox[move.To()] = int8(move.PromotionPiece())
+			b.Hash ^= ZobristPieces[move.PromotionPiece()][move.To()]
 		} else {
 			allbb[move.PromotionPiece()+6].Set(move.To())
 			b.Mailbox[move.To()] = int8(move.PromotionPiece() + 6)
+			b.Hash ^= ZobristPieces[move.PromotionPiece()+6][move.To()]
 		}
 	} else if move.IsEnPassant() && movingpiece != -1 {
 		allbb[movingpiece].Clear(move.From())
 		b.FilledSquares.Set(move.To())
 		if targetpiece != -1 {
 			allbb[targetpiece].Clear(move.To())
+			b.Hash ^= ZobristPieces[targetpiece][move.To()]
 		}
 		allbb[movingpiece].Set(move.To())
+		b.Hash ^= ZobristPieces[movingpiece][move.To()]
 		b.Mailbox[move.To()] = movingpiece
 
 		if b.Turn {
 			b.FilledSquares.Clear(move.To() + 8)
 			allbb[11].Clear(move.To() + 8)
 			b.Mailbox[move.To()+8] = -1
+			b.Hash ^= ZobristPieces[11][move.To()+8]
 		} else {
 			b.FilledSquares.Clear(move.To() - 8)
 			allbb[5].Clear(move.To() - 8)
 			b.Mailbox[move.To()+8] = -1
+			b.Hash ^= ZobristPieces[5][move.To()-8]
 		}
 	} else if targetpiece > 5 {
 		// piece is black
@@ -732,12 +765,15 @@ func (b *Board) PlayMove(move moves.Move) {
 			allbb[targetpiece].Clear(move.To())
 			allbb[movingpiece].Set(move.To())
 			b.Mailbox[move.To()] = movingpiece
+			b.Hash ^= ZobristPieces[targetpiece][move.To()]
+			b.Hash ^= ZobristPieces[movingpiece][move.To()]
 		}
 	} else if targetpiece == -1 {
 		b.FilledSquares.Set(move.To())
 		allbb[movingpiece].Clear(move.From())
 		allbb[movingpiece].Set(move.To())
 		b.Mailbox[move.To()] = movingpiece
+		b.Hash ^= ZobristPieces[movingpiece][move.To()]
 
 		if b.Turn && movingpiece == 5 {
 			if move.From()-move.To() == 16 {
@@ -756,6 +792,8 @@ func (b *Board) PlayMove(move moves.Move) {
 			allbb[targetpiece].Clear(move.To())
 			allbb[movingpiece].Set(move.To())
 			b.Mailbox[move.To()] = movingpiece
+			b.Hash ^= ZobristPieces[movingpiece][move.To()]
+			b.Hash ^= ZobristPieces[targetpiece][move.To()]
 		}
 	}
 
@@ -810,25 +848,30 @@ func (b *Board) UndoMove(move moves.Move) {
 
 		allbb[promotedIndex].Clear(u.to)
 		b.Mailbox[u.to] = -1
+		b.Hash ^= ZobristPieces[promotedIndex][u.to]
 
 		allbb[u.movingPiece].Set(u.from)
 		b.Mailbox[u.from] = u.movingPiece
+		b.Hash ^= ZobristPieces[u.movingPiece][u.from]
 	}
 
 	b.FilledSquares.Clear(u.to)
 	b.Mailbox[u.to] = -1
 
 	allbb[u.movingPiece].Clear(u.to)
+	b.Hash ^= ZobristPieces[u.movingPiece][u.to]
 
 	if u.capturedPiece != -1 {
 		allbb[u.capturedPiece].Set(u.to)
 		b.FilledSquares.Set(u.to)
 		b.Mailbox[u.to] = u.capturedPiece
+		b.Hash ^= ZobristPieces[u.capturedPiece][u.to]
 	}
 
 	allbb[u.movingPiece].Set(u.from)
 	b.FilledSquares.Set(u.from)
 	b.Mailbox[u.from] = u.movingPiece
+	b.Hash ^= ZobristPieces[u.movingPiece][u.from]
 
 	// handle en-passant capture
 	if move.IsEnPassant() {
@@ -836,10 +879,12 @@ func (b *Board) UndoMove(move moves.Move) {
 			allbb[11].Set(u.to + 8)
 			b.FilledSquares.Set(u.to + 8)
 			b.Mailbox[u.to+8] = 11
+			b.Hash ^= ZobristPieces[11][u.to+8]
 		} else { // black moved
 			allbb[5].Set(u.to - 8)
 			b.FilledSquares.Set(u.to - 8)
 			b.Mailbox[u.to-8] = 5
+			b.Hash ^= ZobristPieces[5][u.to-8]
 		}
 	}
 
@@ -861,6 +906,10 @@ func (b *Board) UndoMove(move moves.Move) {
 		b.Mailbox[59] = -1
 		b.Mailbox[60] = 0
 		b.Mailbox[56] = 2
+		b.Hash ^= ZobristPieces[0][58]
+		b.Hash ^= ZobristPieces[2][59]
+		b.Hash ^= ZobristPieces[0][60]
+		b.Hash ^= ZobristPieces[2][56]
 	case 63:
 		allbb[0].Clear(62)
 		allbb[2].Clear(61)
@@ -875,6 +924,10 @@ func (b *Board) UndoMove(move moves.Move) {
 		b.Mailbox[62] = -1
 		b.Mailbox[60] = 0
 		b.Mailbox[63] = 2
+		b.Hash ^= ZobristPieces[0][62]
+		b.Hash ^= ZobristPieces[2][61]
+		b.Hash ^= ZobristPieces[0][60]
+		b.Hash ^= ZobristPieces[2][63]
 
 	case 0:
 		allbb[6].Clear(2)
@@ -890,6 +943,10 @@ func (b *Board) UndoMove(move moves.Move) {
 		b.Mailbox[3] = -1
 		b.Mailbox[4] = 6
 		b.Mailbox[0] = 8
+		b.Hash ^= ZobristPieces[6][2]
+		b.Hash ^= ZobristPieces[8][3]
+		b.Hash ^= ZobristPieces[6][4]
+		b.Hash ^= ZobristPieces[8][0]
 
 	case 7:
 		allbb[6].Clear(6)
@@ -904,55 +961,21 @@ func (b *Board) UndoMove(move moves.Move) {
 		b.Mailbox[6] = -1
 		b.Mailbox[4] = 6
 		b.Mailbox[7] = 8
+		b.Hash ^= ZobristPieces[6][6]
+		b.Hash ^= ZobristPieces[8][5]
+		b.Hash ^= ZobristPieces[6][4]
+		b.Hash ^= ZobristPieces[8][7]
 	}
-}
-
-func GeneratePrecomputedTables() *preCompTables {
-	precomp := &preCompTables{}
-
-	for i := 0; i < 64; i++ {
-		b := Bitboard(1 << i)
-
-		north := b << 8
-		south := b >> 8
-		east := (b << 1) &^ FileA
-		west := (b >> 1) &^ FileH
-		northEast := (b << 9) &^ FileA
-		northWest := (b << 7) &^ FileH
-		southEast := (b >> 7) &^ FileA
-		southWest := (b >> 9) &^ FileH
-
-		l1 := (b >> 1) & Bitboard(0x7f7f7f7f7f7f7f7f)
-		l2 := (b >> 2) & Bitboard(0x3f3f3f3f3f3f3f3f)
-		r1 := (b << 1) & Bitboard(0xfefefefefefefefe)
-		r2 := (b << 2) & Bitboard(0xfcfcfcfcfcfcfcfc)
-		h1 := l1 | r1
-		h2 := l2 | r2
-
-		precomp.Knight[i] = (h1 << 16) | (h1 >> 16) | (h2 << 8) | (h2 >> 8)
-		precomp.King[i] = north | south | east | west | northEast | northWest | southEast | southWest
-	}
-	return precomp
-}
-
-var precomped *preCompTables = GeneratePrecomputedTables()
-
-func TrailingZerosLoop(b Bitboard) []int8 {
-	var squareslist []int8
-	bb := uint64(b)
-	for bb != 0 {
-		square := bits.TrailingZeros64(bb)
-		squareslist = append(squareslist, int8(square))
-
-		bb &= bb - 1
-	}
-	return squareslist
 }
 
 func (b *Board) IsInCheck() bool {
 
 	return false
 }
+
+// ---------------
+// Magic Bitboards
+// ---------------
 
 type Magic struct {
 	Mask   Bitboard
@@ -967,15 +990,15 @@ var rookAttacks []Bitboard
 var bishopMagics [64]Magic
 var bishopAttacks []Bitboard
 
-type RookLookupKey struct {
-	StartSquare  int
-	Blockerboard Bitboard
-}
-
 var RookMovementMasks [64]Bitboard
 var BishopMovementMasks [64]Bitboard
 var BishopOccupancyMasks [64]Bitboard
 var RookLookupTable map[RookLookupKey]Bitboard
+
+type RookLookupKey struct {
+	StartSquare  int
+	Blockerboard Bitboard
+}
 
 var precomputedRookMagics = [64]uint64{
 	0x8080002484104000, 0x8040042000401002,
@@ -1211,6 +1234,40 @@ func GenerateRookLookuptable() {
 			RookLookupTable[lkey] = legalmoveboard
 		}
 	}
+}
+
+// ------------
+// Main Movegen
+// ------------
+
+var precomped *preCompTables = GeneratePrecomputedTables()
+
+func GeneratePrecomputedTables() *preCompTables {
+	precomp := &preCompTables{}
+
+	for i := 0; i < 64; i++ {
+		b := Bitboard(1 << i)
+
+		north := b << 8
+		south := b >> 8
+		east := (b << 1) &^ FileA
+		west := (b >> 1) &^ FileH
+		northEast := (b << 9) &^ FileA
+		northWest := (b << 7) &^ FileH
+		southEast := (b >> 7) &^ FileA
+		southWest := (b >> 9) &^ FileH
+
+		l1 := (b >> 1) & Bitboard(0x7f7f7f7f7f7f7f7f)
+		l2 := (b >> 2) & Bitboard(0x3f3f3f3f3f3f3f3f)
+		r1 := (b << 1) & Bitboard(0xfefefefefefefefe)
+		r2 := (b << 2) & Bitboard(0xfcfcfcfcfcfcfcfc)
+		h1 := l1 | r1
+		h2 := l2 | r2
+
+		precomp.Knight[i] = (h1 << 16) | (h1 >> 16) | (h2 << 8) | (h2 >> 8)
+		precomp.King[i] = north | south | east | west | northEast | northWest | southEast | southWest
+	}
+	return precomp
 }
 
 func isValidSquare(target, start, dir int) bool {

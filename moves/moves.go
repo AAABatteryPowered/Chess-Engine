@@ -1,5 +1,7 @@
 package moves
 
+import "fmt"
+
 type Move uint16
 
 type MoveList struct {
@@ -67,6 +69,30 @@ func (m Move) PromotionPiece() uint8 {
 		return 0
 	}
 	return uint8(m.Flags()>>12) - 2
+}
+
+func (m Move) MoveToString() string {
+	files := "abcdefgh"
+	ranks := "87654321"
+
+	from := fmt.Sprintf("%c%c", files[m.From()%8], ranks[m.From()/8])
+	to := fmt.Sprintf("%c%c", files[m.To()%8], ranks[m.To()/8])
+
+	promotion := ""
+	if m.IsPromotion() {
+		switch m.PromotionPiece() {
+		case 1:
+			promotion = "q"
+		case 2:
+			promotion = "r"
+		case 3:
+			promotion = "b"
+		case 4:
+			promotion = "n"
+		}
+	}
+
+	return from + to + promotion
 }
 
 func (ml *MoveList) Add(move Move) {

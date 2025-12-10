@@ -2,11 +2,14 @@ package main
 
 import (
 	"bot/board"
+	"bot/evaluation"
 	"bot/moves"
+	"bufio"
 	"fmt"
 	"os"
 	"runtime/pprof"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -59,7 +62,7 @@ func PerftDivide(b *board.Board, depth int) uint64 {
 
 		b.UndoMove(move)
 
-		moveStr := MoveToString(move, b)
+		moveStr := move.MoveToString()
 		results = append(results, MoveResult{move, nodes, moveStr})
 		totalNodes += nodes
 	}
@@ -78,28 +81,32 @@ func PerftDivide(b *board.Board, depth int) uint64 {
 	return totalNodes
 }
 
-func MoveToString(m moves.Move, b *board.Board) string {
+func StringToMove(moveStr string) moves.Move {
 	files := "abcdefgh"
 	ranks := "87654321"
 
-	from := fmt.Sprintf("%c%c", files[m.From()%8], ranks[m.From()/8])
-	to := fmt.Sprintf("%c%c", files[m.To()%8], ranks[m.To()/8])
+	fromFile := strings.IndexByte(files, moveStr[0])
+	fromRank := strings.IndexByte(ranks, moveStr[1])
+	from := int8(fromRank*8 + fromFile)
 
-	promotion := ""
-	if m.IsPromotion() {
-		switch m.PromotionPiece() {
-		case 1:
-			promotion = "q"
-		case 2:
-			promotion = "r"
-		case 3:
-			promotion = "b"
-		case 4:
-			promotion = "n"
+	toFile := strings.IndexByte(files, moveStr[2])
+	toRank := strings.IndexByte(ranks, moveStr[3])
+	to := int8(toRank*8 + toFile)
+
+	if len(moveStr) == 5 {
+		switch moveStr[4] {
+		case 'q':
+			return moves.NewMove(from, to, moves.FlagPromotionKnight)
+		case 'r':
+			return moves.NewMove(from, to, moves.FlagPromotionBishop)
+		case 'b':
+			return moves.NewMove(from, to, moves.FlagPromotionRook)
+		case 'n':
+			return moves.NewMove(from, to, moves.FlagPromotionQueen)
 		}
 	}
 
-	return from + to + promotion
+	return moves.NewMove(from, to, moves.FlagNone)
 }
 
 func timer(name string) func() {
@@ -121,15 +128,61 @@ func main() {
 	pprof.StartCPUProfile(f)
 	defer pprof.StopCPUProfile()
 	board.InitMagicBitboards()
+	reader := bufio.NewScanner(os.Stdin)
+
 	b := board.Board{
 		UndoCount: 0,
 	}
 	b.FromFen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
 
+	board.InitZobrist()
+	fmt.Println(board.CalculateHash(&b))
+
+	for reader.Scan() {
+		line := strings.TrimSpace(reader.Text())
+
+		switch {
+		case line == "start":
+			move := evaluation.FindBestMove(&b, 7)
+			fmt.Println(move.MoveToString())
+			b.PlayMove(move)
+		case strings.HasPrefix(line, "go"):
+			b.PlayMove(StringToMove(strings.Split(line, " ")[1]))
+			move := evaluation.FindBestMove(&b, 7)
+			moveStr := move.MoveToString()
+			b.PlayMove(move)
+
+			fmt.Println(moveStr)
+		case line == "playurself":
+			for {
+				move := evaluation.FindBestMove(&b, 7)
+				fmt.Println(move.MoveToString())
+				b.PlayMove(move)
+			}
+		case line == "quit":
+			return
+		case line == "test":
+			fmt.Println(evaluation.Evaluate(&b))
+			undo := moves.NewMove(1, 16, moves.FlagNone)
+			b.PlayMove(undo)
+			fmt.Println(evaluation.Evaluate(&b))
+			b.UndoMove(undo)
+			undo = moves.NewMove(1, 18, moves.FlagNone)
+			b.PlayMove(undo)
+			fmt.Println(evaluation.Evaluate(&b))
+			b.UndoMove(undo)
+		}
+	}
+
+	fmt.Fprintln(os.Stderr, "Loop exited!")
+	if err := reader.Err(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+	} else {
+		fmt.Fprintln(os.Stderr, "EOF received")
+	}
+
 	//fmt.Println(b.Mailbox)
-	fmt.Println(Perft(&b, 6))
-	//move := evaluation.FindBestMove(&b, 7)
-	//fmt.Println(MoveToString(move, &b))
+	//fmt.Println(Perft(&b, 6))
 
 	//fmt.Println(MoveToString(moves.NewMove(51, 59, moves.FlagPromotionKnight), &b))
 	//b.PlayMove(move)
